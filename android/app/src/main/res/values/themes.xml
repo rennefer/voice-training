@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Recorder" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/brass</item>
+        <item name="colorOnPrimary">@color/on_brass</item>
+        <item name="colorSecondary">@color/brass</item>
+        <item name="colorSurface">@color/bg</item>
+        <item name="colorSurfaceContainerHigh">@color/dialog_bg</item>
+        <item name="colorOnSurface">@color/text</item>
+        <item name="colorOnSurfaceVariant">@color/text_soft</item>
+        <item name="colorOutline">@color/text_soft</item>
+        <item name="android:colorBackground">@color/bg</item>
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+
+    <style name="Caption">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">16dp</item>
+        <item name="android:layout_marginBottom">6dp</item>
+        <item name="android:paddingStart">4dp</item>
+        <item name="android:textColor">@color/text_soft</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <style name="Nudge">
+        <item name="android:layout_width">36dp</item>
+        <item name="android:layout_height">44dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:textColor">@color/brass_text</item>
+        <item name="android:textSize">20sp</item>
+        <item name="android:fontFamily">sans-serif-light</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:background">?android:attr/selectableItemBackgroundBorderless</item>
+    </style>
+
+    <style name="Time">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textColor">@color/text_soft</item>
+        <item name="android:textSize">13sp</item>
+    </style>
+</resources>

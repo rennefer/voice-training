@@ -1,0 +1,55 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'app.mp3splitter'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'app.mp3splitter'
+        minSdk 29
+        targetSdk 36
+        // CI passes the build number and tag; local builds stay 1 / 1.0
+        versionCode((System.getenv('VERSION_CODE') ?: '1') as int)
+        versionName(System.getenv('VERSION_NAME') ?: '1.0')
+    }
+
+    // Release key from environment (GitHub secrets). Without it, release builds use the debug key.
+    def ks = System.getenv('RECORDER_KEYSTORE')
+    signingConfigs {
+        if (ks) {
+            release {
+                storeFile file(ks)
+                storePassword System.getenv('RECORDER_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('RECORDER_KEY_ALIAS')
+                keyPassword System.getenv('RECORDER_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // Lets you install a release build straight from Android Studio without making a keystore.
+            signingConfig ks ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.activity:activity-ktx:1.9.3'
+    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
+}

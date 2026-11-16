@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Same palette as FineVolume (Nile navy + polished brass) -->
+    <color name="bg">#FF121C26</color>
+    <color name="bg_bottom">#FF0D141C</color>
+    <color name="text">#FFEEF2F5</color>
+    <color name="text_soft">#FF8FA1B0</color>
+    <color name="brass">#FFC8A96C</color>
+    <color name="brass_light">#FFEFE1BB</color>
+    <color name="brass_dark">#FF8A6D3B</color>
+    <color name="brass_text">#FFD6BB85</color>
+    <color name="on_brass">#FF1A140A</color>
+    <color name="ring_off">#21FFFFFF</color>
+    <color name="dialog_bg">#FF162230</color>
+</resources>

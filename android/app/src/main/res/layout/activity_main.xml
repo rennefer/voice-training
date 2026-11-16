@@ -1,0 +1,380 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/scroll"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:id="@+id/content"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="22dp"
+        android:paddingTop="26dp"
+        android:paddingEnd="22dp"
+        android:paddingBottom="28dp">
+
+        <!-- Top row: title · open file · new recording -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:fontFamily="sans-serif-medium"
+                android:text="@string/app_name"
+                android:textColor="@color/brass_text"
+                android:textSize="21sp" />
+
+            <ImageButton
+                android:id="@+id/openButton"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
+                android:contentDescription="Open audio file"
+                android:scaleType="center"
+                android:src="@drawable/ic_folder"
+                android:tint="@color/brass_text" />
+
+            <ImageButton
+                android:id="@+id/deleteButton"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
+                android:layout_marginStart="10dp"
+                android:contentDescription="Delete recording"
+                android:scaleType="center"
+                android:src="@drawable/ic_delete"
+                android:tint="@color/brass_text"
+                android:visibility="gone" />
+
+            <FrameLayout
+                android:id="@+id/newRecButton"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
+                android:layout_marginStart="10dp"
+                android:clickable="true"
+                android:contentDescription="New recording"
+                android:focusable="true"
+                android:visibility="gone">
+
+                <View
+                    android:id="@+id/newRecDot"
+                    android:layout_width="14dp"
+                    android:layout_height="14dp"
+                    android:layout_gravity="center" />
+            </FrameLayout>
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="center"
+            android:textColor="@color/text_soft"
+            android:textSize="14sp"
+            android:visibility="gone" />
+
+        <!-- ============ Recorder ============ -->
+        <LinearLayout
+            android:id="@+id/recPanel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="56dp">
+
+                <app.mp3splitter.LevelDial
+                    android:id="@+id/dial"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center" />
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <LinearLayout
+                        android:id="@+id/recLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:visibility="invisible">
+
+                        <View
+                            android:id="@+id/recLabelDot"
+                            android:layout_width="7dp"
+                            android:layout_height="7dp"
+                            android:layout_marginEnd="6dp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="sans-serif-medium"
+                            android:letterSpacing="0.16"
+                            android:text="REC"
+                            android:textColor="@color/brass_text"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/timer"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="sans-serif-light"
+                        android:includeFontPadding="false"
+                        android:letterSpacing="-0.03"
+                        android:text="0:00"
+                        android:textColor="@color/text"
+                        android:textSize="68sp" />
+
+                    <TextView
+                        android:id="@+id/recInfo"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/text_soft"
+                        android:textSize="14sp" />
+                </LinearLayout>
+            </FrameLayout>
+
+            <FrameLayout
+                android:id="@+id/recordButton"
+                android:layout_width="76dp"
+                android:layout_height="76dp"
+                android:layout_marginTop="12dp"
+                android:clickable="true"
+                android:contentDescription="Record"
+                android:elevation="6dp"
+                android:focusable="true">
+
+                <View
+                    android:id="@+id/recordGlyph"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_gravity="center" />
+            </FrameLayout>
+
+            <TextView
+                android:id="@+id/recordHint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="40dp"
+                android:text="Keeps recording with the screen off"
+                android:textColor="@color/text_soft"
+                android:textSize="13sp"
+                android:visibility="invisible" />
+        </LinearLayout>
+
+        <!-- ============ Editor ============ -->
+        <LinearLayout
+            android:id="@+id/editor"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="22dp"
+                android:fontFamily="sans-serif-medium"
+                android:gravity="center"
+                android:letterSpacing="0.16"
+                android:text="SELECTION"
+                android:textColor="@color/brass_text"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/selLength"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-light"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:letterSpacing="-0.03"
+                android:textColor="@color/text"
+                android:textSize="60sp" />
+
+            <TextView
+                android:id="@+id/ofTotal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:textColor="@color/text_soft"
+                android:textSize="14sp" />
+
+            <FrameLayout
+                android:id="@+id/wavePanel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:paddingStart="4dp"
+                android:paddingTop="12dp"
+                android:paddingEnd="4dp"
+                android:paddingBottom="6dp">
+
+                <app.mp3splitter.WaveformView
+                    android:id="@+id/waveform"
+                    android:layout_width="match_parent"
+                    android:layout_height="132dp" />
+            </FrameLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView android:id="@+id/startMinus" style="@style/Nudge" android:contentDescription="Start 1 second earlier" android:text="−" />
+                <TextView android:id="@+id/startTime" style="@style/Time" />
+                <TextView android:id="@+id/startPlus" style="@style/Nudge" android:contentDescription="Start 1 second later" android:text="+" />
+
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+
+                <ImageButton
+                    android:id="@+id/playButton"
+                    android:layout_width="50dp"
+                    android:layout_height="50dp"
+                    android:contentDescription="Play selection"
+                    android:scaleType="center"
+                    android:src="@drawable/ic_play"
+                    android:tint="@color/brass_text" />
+
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+
+                <TextView android:id="@+id/endMinus" style="@style/Nudge" android:contentDescription="End 1 second earlier" android:text="−" />
+                <TextView android:id="@+id/endTime" style="@style/Time" />
+                <TextView android:id="@+id/endPlus" style="@style/Nudge" android:contentDescription="End 1 second later" android:text="+" />
+            </LinearLayout>
+
+            <TextView style="@style/Caption" android:text="kbps" />
+            <app.mp3splitter.TabBar
+                android:id="@+id/qualityBar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
+            <TextView style="@style/Caption" android:text="MB per part" />
+            <app.mp3splitter.TabBar
+                android:id="@+id/splitBar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/customLayout"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="150dp"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:layout_marginTop="8dp"
+                android:hint="Size"
+                android:visibility="gone"
+                app:boxStrokeColor="@color/brass"
+                app:hintTextColor="@color/brass_text"
+                app:suffixText="MB">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/customMb"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="numberDecimal"
+                    android:textColor="@color/text" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <LinearLayout
+                android:id="@+id/evenRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="18dp"
+                android:paddingTop="6dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="6dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:fontFamily="sans-serif-medium"
+                    android:text="Even out volume"
+                    android:textColor="@color/text"
+                    android:textSize="15sp" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/evenOut"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="Even out volume"
+                    app:thumbTint="@color/switch_thumb"
+                    app:trackDecorationTint="@android:color/transparent"
+                    app:trackTint="@color/switch_track" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/estimate"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="26dp"
+                android:gravity="center"
+                android:textColor="@color/text_soft"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/exportButton"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:layout_marginTop="12dp"
+                android:fontFamily="sans-serif-medium"
+                android:stateListAnimator="@null"
+                android:textAllCaps="false"
+                android:textColor="@color/on_brass"
+                android:textSize="17sp" />
+
+            <com.google.android.material.progressindicator.LinearProgressIndicator
+                android:id="@+id/exportProgress"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:max="100"
+                android:visibility="gone"
+                app:indicatorColor="@color/brass"
+                app:trackColor="@color/ring_off"
+                app:trackCornerRadius="3dp"
+                app:trackThickness="5dp" />
+
+            <LinearLayout
+                android:id="@+id/results"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:orientation="vertical" />
+
+            <TextView
+                android:id="@+id/shareAll"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
+                android:layout_marginTop="4dp"
+                android:fontFamily="sans-serif-medium"
+                android:gravity="center"
+                android:text="Share all"
+                android:textColor="@color/brass_text"
+                android:textSize="15sp"
+                android:visibility="gone" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>
