@@ -81,6 +81,7 @@ class VoiceActivity : BrassActivity() {
         tabs.onSelect = { if (it == 0) { finish(); overridePendingTransition(0, 0) } }
         top.addView(tabs, LinearLayout.LayoutParams(dp(180), LinearLayout.LayoutParams.WRAP_CONTENT))
         c.add(top)
+        c.add(goalSwitch(settings) { recreate() }, 12)
 
         // big Hz + target block
         val big = row(Gravity.BOTTOM)
@@ -99,7 +100,7 @@ class VoiceActivity : BrassActivity() {
         c.add(rangeBar, 12)
 
         chart = PitchChartView(this).apply { background = Brass.panel(16 * d); idleText = "Tap the brass button and speak" }
-        c.addView(chart, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(250)).apply { topMargin = dp(8) })
+        c.addView(chart, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(220)).apply { topMargin = dp(8) })
 
         val meters = panel(col(), 16, 10)
         mRes = MeterView(this, "Resonance", "Dark", "Bright")
@@ -121,6 +122,16 @@ class VoiceActivity : BrassActivity() {
         c.add(bottom, 16)
 
         applyTarget()
+        if (!settings.directionChosen) askDirection()
+    }
+
+    /** First visit: ask which voice the user is training toward. */
+    private fun askDirection() {
+        val box = col().apply { setPadding(dp(24), dp(8), dp(24), dp(8)) }
+        box.add(text("This sets your target, exercises, scores and achievements. You can switch any time at the top of the Voice screen.", 13f, Brass.TEXT_SOFT))
+        var dlg: androidx.appcompat.app.AlertDialog? = null
+        box.add(goalSwitch(settings, large = true) { dlg?.dismiss(); recreate() }, 14)
+        dlg = MaterialAlertDialogBuilder(this).setTitle("What are you training toward?").setView(box).show()
     }
 
     private fun applyTarget() {
@@ -217,12 +228,21 @@ class VoiceActivity : BrassActivity() {
             .setTitle("Training target")
             .setView(box)
             .setPositiveButton("Save") { _, _ ->
-                settings.goal = goal
+                val changed = goal != settings.goal
+                settings.switchTo(goal)
                 settings.target = target.value; settings.tolerance = tol.value; settings.weeklyGoal = goalDays.value.toInt()
-                applyTarget()
+                if (changed) recreate() else applyTarget()
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private var shownGoal: Goal? = null
+    override fun onResume() {
+        super.onResume()
+        // the direction may have been switched on the Exercises screen
+        if (shownGoal != null && shownGoal != settings.goal) recreate()
+        shownGoal = settings.goal
     }
 
     override fun onPause() {

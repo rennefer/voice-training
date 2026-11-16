@@ -108,6 +108,28 @@ open class BrassActivity : AppCompatActivity() {
 
     fun gap(parent: ViewGroup, dpH: Int) = parent.addView(View(this), LinearLayout.LayoutParams(1, dp(dpH)))
 
+    /** Big two-button Feminine | Masculine switch. [onChange] runs after the setting is saved. */
+    fun goalSwitch(settings: VoiceSettings, large: Boolean = false, onChange: (Goal) -> Unit): LinearLayout {
+        val box = row().apply { weightSum = 2f }
+        val current = if (large && !settings.directionChosen) null else settings.goal
+        for ((i, g) in listOf(Goal.MTF, Goal.FTM).withIndex()) {
+            val on = g == current
+            val b = col().apply {
+                gravity = Gravity.CENTER
+                minimumHeight = dp(if (large) 92 else 58)
+                setPadding(dp(8), dp(6), dp(8), dp(6))
+                background = if (on) Brass.metal(16 * d) else GradientDrawable().apply { cornerRadius = 16 * d; setColor(0x0FFFFFFF); setStroke(dp(1.5f), 0x59D6BB85) }
+                isClickable = true; isFocusable = true
+                contentDescription = g.label + if (on) ", selected" else ""
+                setOnClickListener { settings.switchTo(g); onChange(g) }
+            }
+            b.add(text(g.label, if (large) 19f else 16f, if (on) Brass.ON_BRASS else Brass.BRASS_TEXT, "medium").apply { gravity = Gravity.CENTER }, w = ViewGroup.LayoutParams.WRAP_CONTENT)
+            b.add(text(if (g == Goal.FTM) "FtM · 85–155 Hz" else "MtF · 165–255 Hz", if (large) 13f else 11.5f, if (on) Brass.ON_BRASS else 0xFFA9B6C2.toInt()), w = ViewGroup.LayoutParams.WRAP_CONTENT)
+            box.addView(b, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { if (i == 1) marginStart = dp(8) })
+        }
+        return box
+    }
+
     fun LinearLayout.add(v: View, topDp: Int = 0, w: Int = ViewGroup.LayoutParams.MATCH_PARENT, weight: Float = 0f): View {
         val lp = if (orientation == LinearLayout.VERTICAL) LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT)
         else LinearLayout.LayoutParams(if (weight > 0) 0 else w, ViewGroup.LayoutParams.WRAP_CONTENT, weight)

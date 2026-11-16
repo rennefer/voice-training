@@ -80,6 +80,15 @@ input[type=range] { width: 100%; accent-color: var(--brass); }
 .progress { height: 6px; border-radius: 3px; background: var(--off); overflow: hidden; }
 .progress > div { height: 100%; width: 0; background: linear-gradient(90deg, var(--brass-d), var(--brass-l)); transition: width .2s; }
 .hidden { display: none !important; }
+.goal-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.goal-switch button { min-height: 58px; border-radius: 16px; background: var(--panel); border: 1.5px solid rgba(214,187,133,.35); color: var(--softer); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 6px 8px; }
+.goal-switch button .g1 { font-size: 16px; font-weight: 600; color: var(--brass-t); }
+.goal-switch button .g2 { font-size: 11.5px; }
+.goal-switch button.on { background: var(--metal); border-color: transparent; color: var(--on-brass); box-shadow: 0 4px 14px rgba(0,0,0,.35); }
+.goal-switch button.on .g1 { color: var(--on-brass); }
+.goal-switch.large button { min-height: 92px; }
+.goal-switch.large button .g1 { font-size: 19px; }
+.goal-switch.large button .g2 { font-size: 13px; }
 .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: #1F2D3C; color: var(--text); border: 1px solid var(--stroke); padding: 10px 16px; border-radius: 20px; font-size: 14px; z-index: 50; box-shadow: 0 6px 20px rgba(0,0,0,.4); max-width: 90vw; }
 .modal-back { position: fixed; inset: 0; background: rgba(5,10,15,.7); z-index: 40; display: flex; align-items: center; justify-content: center; padding: 20px; }
 .modal { width: 100%; max-width: 400px; max-height: 85vh; overflow: auto; background: #162230; border: 1px solid var(--stroke); border-radius: 22px; padding: 22px; display: flex; flex-direction: column; gap: 12px; }

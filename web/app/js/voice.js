@@ -9,6 +9,29 @@ import { Scoring } from './scoring.js';
 import { decodeFile, playSamples } from './audio.js';
 import { go, topBar, onLeave } from './main.js';
 
+/** Switch to feminine/masculine training; each direction remembers its own target. */
+export function setDirection(dir) {
+  const set = S(), old = dirOf(set);
+  const patch = { direction: dir, directionChosen: true };
+  if (dir !== old) {
+    patch[old === 'ftm' ? 'targetFtm' : 'targetMtf'] = set.target;
+    patch.target = set[dir === 'ftm' ? 'targetFtm' : 'targetMtf'] || DIRS[dir].defaultTarget;
+  }
+  saveSettings(patch);
+}
+
+/** Big two-button Feminine | Masculine switch. */
+export function goalSwitch(onChange, large = false) {
+  const set = S();
+  const box = el('div.goal-switch' + (large ? '.large' : ''), { role: 'radiogroup', 'aria-label': 'Training goal' });
+  const make = (dir, title, sub) => {
+    const on = (!large || set.directionChosen) && dirOf(set) === dir;
+    return el('button', { role: 'radio', 'aria-checked': String(on), class: on ? 'on' : '', onclick: () => { setDirection(dir); onChange(dir); } }, el('span.g1', title), el('span.g2', sub));
+  };
+  box.append(make('mtf', 'Feminine voice', 'MtF · 165–255 Hz'), make('ftm', 'Masculine voice', 'FtM · 85–155 Hz'));
+  return box;
+}
+
 // ---------------------------------------------------------------- live screen
 
 export function voiceScreen(root) {
@@ -20,13 +43,14 @@ export function voiceScreen(root) {
   const targetTitle = el('div.caps'), offText = el('div', { style: { fontSize: '15px', fontWeight: 500, color: '#EFE1BB' } }), status = el('div.small.soft.mono', 'Tap start');
   const tb = el('button', { style: { textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }, 'aria-label': 'Change target', onclick: showSettings }, targetTitle, offText, status);
   const range = rangeBar();
-  const chart = pitchChart(250); chart.st.idleText = 'Tap the brass button and speak';
+  const chart = pitchChart(220); chart.st.idleText = 'Tap the brass button and speak';
   const mRes = meter('Resonance', 'Dark', 'Bright'), mW = meter('Vocal weight', 'Heavy', 'Light'), mVol = meter('Volume', 'Soft', 'Loud'), mBr = meter('Breathiness', 'Clear', 'Breathy');
   const goalText = el('div.tiny.soft', { style: { textAlign: 'center' } });
   const rec = el('button.rec-btn', { 'aria-label': 'Start voice analysis', onclick: () => analyzer ? stop() : start() }, el('div.dot'));
 
   root.append(
     topBar(1),
+    goalSwitch(() => go('#/voice')),
     el('div.row', { style: { alignItems: 'flex-end', marginTop: '6px' } }, el('div.row.grow', { style: { alignItems: 'flex-end', gap: '8px' } }, hz, el('div.soft', { style: { fontSize: '18px', paddingBottom: '8px' } }, 'Hz')), tb),
     range, chart,
     el('div.panel.col', { style: { gap: '6px' } }, mRes, mW, mVol, mBr, goalText),
@@ -34,6 +58,12 @@ export function voiceScreen(root) {
     el('div.row', { style: { gap: '16px' } }, el('button.ghost.grow', { onclick: () => go('#/exercises') }, 'Exercises'), rec, el('button.ghost.grow', { onclick: () => go('#/today') }, 'Today')),
   );
   applyTarget();
+  if (!set.directionChosen) {
+    const close = modal(el('div.col', { style: { gap: '12px' } },
+      el('div.h2', 'What are you training toward?'),
+      el('div.small.soft', 'This sets your target, exercises, scores and achievements. You can switch any time at the top of the Voice screen.'),
+      goalSwitch(() => { close(); go('#/voice'); }, true)), []);
+  }
 
   function applyTarget() {
     const D = DIRS[dirOf(set)];
@@ -100,7 +130,7 @@ export function voiceScreen(root) {
       : 'Feminine goal: female range 165–255 Hz. Typical male speaking range is 85–155 Hz.';
     const hint = el('div.small.soft', hintText());
     modal(el('div.col', el('div.h2', 'Training target'), el('div.small', 'Training goal'), dirTabs, ...rows, hint),
-      [{ label: 'Cancel' }, { label: 'Save', primary: true, onClick: () => { saveSettings({ direction: dir, target: +tg.value, tolerance: +tol.value, weeklyGoal: +goal.value }); applyTarget(); } }]);
+      [{ label: 'Cancel' }, { label: 'Save', primary: true, onClick: () => { const changed = dir !== dirOf(set); setDirection(dir); saveSettings({ target: +tg.value, tolerance: +tol.value, weeklyGoal: +goal.value }); if (changed) go('#/voice'); else applyTarget(); } }]);
   }
 
   onLeave(() => { if (analyzer) stop(); });
@@ -120,7 +150,7 @@ export async function exercisesScreen(root) {
     el('button', { style: { background: 'var(--on-brass)', color: '#EFE1BB', borderRadius: '21px', padding: '10px 20px', fontWeight: 500 }, onclick: () => { const ids = routineList(set).map(e => e.id); if (ids.length) go('#/exercise/routine/' + ids.join(',')); } }, 'Start'));
   const dirNote = el('div.small.soft');
   const chips = el('div.chips'), list = el('div');
-  root.append(header('Exercises', DIRS[dirOf(set)].short, () => go('#/voice')), card, chips, list,
+  root.append(header('Exercises', null, () => go('#/voice')), goalSwitch(() => go('#/exercises')), card, chips, list,
     el('div.notice', el('div', { style: { color: 'var(--brass-t)', fontWeight: 500, marginBottom: '4px' } }, 'Keep your voice healthy'),
       "Stop if it hurts, feels strained or goes hoarse. Sip water, keep the neck and jaw relaxed, and don't push the larynx with your hands. 20–30 minutes a day is plenty, and rest days are fine." +
       (dirOf(set) === 'ftm' ? ' Don\'t force your pitch lower than is comfortable, and don\'t use vocal fry to sound deeper. On testosterone the voice can crack and feel unsteady for a while — that\'s normal; keep it gentle.' : '')));

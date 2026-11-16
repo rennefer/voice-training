@@ -22,6 +22,20 @@ class VoiceSettings(ctx: Context) {
     var goal: Goal
         get() = Goal.of(p.getString("direction", "mtf"))
         set(v) = p.edit().putString("direction", if (v == Goal.FTM) "ftm" else "mtf").apply()
+    /** True once the user has picked a direction (asked on the first visit to the Voice tab). */
+    var directionChosen: Boolean
+        get() = p.getBoolean("directionChosen", false)
+        set(v) = p.edit().putBoolean("directionChosen", v).apply()
+    /** Switch direction; each direction remembers its own target. */
+    fun switchTo(g: Goal) {
+        val old = goal
+        if (g != old) {
+            p.edit().putFloat(if (old == Goal.FTM) "targetFtm" else "targetMtf", target).apply()
+            goal = g
+            target = p.getFloat(if (g == Goal.FTM) "targetFtm" else "targetMtf", g.defaultTarget)
+        }
+        directionChosen = true
+    }
     private val routineKey get() = if (goal == Goal.FTM) "routineFtm" else "routine"
     /** Chosen exercises for the current direction (each direction keeps its own routine). */
     var routine: Set<String>

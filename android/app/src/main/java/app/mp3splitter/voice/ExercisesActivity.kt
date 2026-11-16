@@ -21,7 +21,8 @@ class ExercisesActivity : BrassActivity() {
         super.onCreate(savedInstanceState)
         settings = VoiceSettings(this)
         val c = page()
-        c.add(header("Exercises", settings.goal.short))
+        c.add(header("Exercises"))
+        c.add(goalSwitch(settings) { recreate() }, 12)
 
         // routine card
         val card = row().apply { background = Brass.metal(16 * d); setPadding(dp(18), dp(14), dp(14), dp(14)) }
