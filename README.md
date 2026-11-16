@@ -12,8 +12,7 @@ Everything runs on the phone. No account, no server, no tracking.
 
 1. **Pages:** Settings → Pages → Build and deployment → Source: **GitHub Actions**.
    The page is then at `https://<user>.github.io/<repo>/` and the iPhone app at `…/<repo>/app/`.
-2. **Android release:** create a tag, e.g. on GitHub: Releases → *Draft a new release* → tag `v1.0` → Publish.
-   (Or `git tag v1.0 && git push --tags`.) The *Android APK* workflow builds the APK and attaches `Recorder.apk` to that release.
+2. **Android release:** happens automatically. Every change to `android/` on main (or "Run workflow" on the *Android APK* workflow in the Actions tab) builds the APK and publishes it as a new release with `Recorder.apk` attached.
 3. **Signing key (recommended):** without it, each build is signed with a throwaway debug key, so a new version won't install over the old one. Add four repository secrets (Settings → Secrets and variables → Actions):
    - `RECORDER_KEYSTORE_BASE64` — your keystore file as base64 (`base64 -w0 release.jks`)
    - `RECORDER_KEYSTORE_PASSWORD`, `RECORDER_KEY_ALIAS`, `RECORDER_KEY_PASSWORD`

@@ -1,5 +1,6 @@
-# Builds the Android APK. On a version tag (v1.0, v1.1 …) it publishes a GitHub Release with
-# the APK attached, which the download page links to (releases/latest/download/Recorder.apk).
+# Builds the Android APK whenever the Android code changes on main (or when started by hand
+# from the Actions tab), and publishes it as a GitHub Release named v1.0.<build number>.
+# The download page links to releases/latest/download/Recorder.apk.
 #
 # Signing (optional but recommended): add these repository secrets so every release is signed
 # with the same key and updates install over the previous version:
@@ -12,7 +13,8 @@ name: Android APK
 
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths: ['android/**', '.github/workflows/android.yml']
   workflow_dispatch:
 
 permissions:
@@ -55,7 +57,7 @@ jobs:
           RECORDER_KEY_ALIAS: ${{ secrets.RECORDER_KEY_ALIAS }}
           RECORDER_KEY_PASSWORD: ${{ secrets.RECORDER_KEY_PASSWORD }}
           VERSION_CODE: ${{ github.run_number }}
-          VERSION_NAME: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('dev-{0}', github.run_number) }}
+          VERSION_NAME: 1.0.${{ github.run_number }}
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon assembleRelease
@@ -67,11 +69,13 @@ jobs:
           path: Recorder.apk
 
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v1.0.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
           files: Recorder.apk
-          name: Recorder ${{ github.ref_name }} (test version)
+          name: Recorder 1.0.${{ github.run_number }} (test version)
           prerelease: false
           body: |
             **Test version** — things may change or break, and saved sessions could be lost between versions.
