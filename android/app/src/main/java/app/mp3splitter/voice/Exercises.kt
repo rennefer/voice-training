@@ -11,6 +11,7 @@ enum class Category(val title: String, val chip: String, val hint: String) {
     WEIGHT("VOCAL WEIGHT", "Weight", "light vs heavy meter"),
     MELODY("MELODY & SPEECH", "Melody", "pitch variation"),
     MIMICRY("MIMICRY", "Mimicry", "use your own clips"),
+    PLAN("MY PLAN", "My plan", ""),   // exercises from an imported plan file; not in the library
 }
 
 /** How an exercise is run and scored. */
@@ -55,6 +56,9 @@ data class Exercise(
     val def: String = "",          // "m" = in the MtF starting routine, "f" = FtM, "mf" = both
     val roundSeconds: Float = 0f,   // length of one guided round (guide kinds)
     val rounds: Int = 1,
+    val steps: List<String> = emptyList(),   // numbered steps (plan exercises)
+    val caution: String = "",
+    val optional: Boolean = false,
 )
 
 object Exercises {
@@ -106,7 +110,7 @@ object Exercises {
     fun forGoal(g: Goal) = all.filter { it.dir == Dir.BOTH || it.dir == g.dir }
     fun defaultRoutine(g: Goal) = forGoal(g).filter { it.def.contains(if (g == Goal.FTM) 'f' else 'm') }.map { it.id }.toSet()
 
-    fun byId(id: String) = all.firstOrNull { it.id == id }
+    fun byId(id: String) = all.firstOrNull { it.id == id } ?: PlanStore.current?.exercises?.firstOrNull { it.id == id }
 
     const val PASSAGE =
         "The morning light came slowly over the hills, and the lake was so still that it held the whole sky. " +

@@ -1,10 +1,10 @@
 // Voice tab: live pitch on a 10 Hz scale, range bar and meters; exercises list; guided exercise runner.
-import { el, header, fmtTime, icons, modal, toast, tabs as tabsRow } from './ui.js';
+import { el, header, fmtTime, icons, modal, toast, confirmBox, tabs as tabsRow } from './ui.js';
 import { S, saveSettings, sessions, setPending } from './store.js';
 import { Scores, Ranges, computeStats, median, LiveSmoother } from './engine.js';
 import { pitchChart, meter, rangeBar } from './views.js';
 import { LiveAnalyzer, SessionBuilder } from './live.js';
-import { exercisesFor, Categories, byId, guide, PASSAGE, routineList, routineIds, routinePatch, dirOf, DIRS } from './exercises.js';
+import { exercisesFor, Categories, byId, guide, PASSAGE, routineList, routineIds, routinePatch, dirOf, DIRS, PLAN_CAT, parsePlan, planExercises, planDay, fillPlan } from './exercises.js';
 import { Scoring } from './scoring.js';
 import { decodeFile, playSamples } from './audio.js';
 import { go, topBar, onLeave } from './main.js';
@@ -140,17 +140,57 @@ export function voiceScreen(root) {
 
 // ---------------------------------------------------------------- exercise library
 
+/** "My plan" panel: import a private plan file, or show the plan with its own words, days and exercises. */
+function planPanel(set, sc, refresh) {
+  const fileIn = el('input', { type: 'file', accept: '.json,application/json,.recorderplan', class: 'hidden', onchange: async () => {
+    const f = fileIn.files[0]; fileIn.value = ''; if (!f) return;
+    try { const plan = parsePlan(await f.text()); saveSettings({ plan }); toast(`Plan added: ${plan.name}`); refresh(); }
+    catch (e) { toast(e.message || 'Could not read that file', 3500); }
+  } });
+  const p = set.plan;
+  if (!p) return el('div', el('button.ghost', { style: { width: '100%' }, onclick: () => fileIn.click() }, 'Import plan file'),
+    el('div.tiny.soft', { style: { marginTop: '6px', textAlign: 'center' } }, 'A plan from your speech therapist, stored only on this phone'), fileIn);
+
+  const pd = planDay(set), exs = planExercises(set);
+  const doneDays = new Set(sc.sessions.filter(s => s.plan && s.id >= p.startedAt).map(s => new Date(s.id).toDateString()));
+  const dots = el('div.row', { style: { gap: '6px', flexWrap: 'wrap' } });
+  for (let i = 0; i < p.days; i++) {
+    const d = new Date(p.startedAt); d.setDate(d.getDate() + i);
+    const ok = doneDays.has(d.toDateString()), today = i + 1 === pd.day && !pd.done;
+    dots.append(el('div', { title: `Day ${i + 1}`, style: { width: '30px', height: '30px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px',
+      background: ok ? 'var(--metal)' : 'none', color: ok ? 'var(--on-brass)' : today ? '#EFE1BB' : 'var(--soft)', border: ok ? 'none' : `${today ? 2 : 1}px solid ${today ? 'var(--brass-t)' : 'rgba(255,255,255,.2)'}` } }, ok ? '✓' : String(i + 1)));
+  }
+  const fields = p.fields.map(f => {
+    const inp = el('input', { type: 'text', placeholder: f.hint || '', 'aria-label': f.label, value: p.values[f.key] || '',
+      onchange: () => { p.values[f.key] = inp.value.trim(); saveSettings({ plan: p }); } });
+    return el('div.col', { style: { gap: '4px' } }, el('div.small', f.label), inp);
+  });
+  const today = new Set(sc.daySessions(Date.now()).flatMap(s => s.exercises.map(e => e.id)));
+  const list = exs.map(e => el('button.item', { style: { width: '100%', textAlign: 'left' }, onclick: () => go('#/exercise/one/' + e.id) },
+    el('div.col.grow', { style: { gap: '2px' } }, el('div', { style: { fontWeight: 500, fontSize: '14px' } }, e.name + (today.has(e.id) ? '  ✓' : '')),
+      el('div.tiny.soft', `${e.minutes} min · ${e.kind === 'TIMER' ? 'timer' : 'live pitch'}${e.optional ? ' · optional' : ''}`))));
+  return el('div.panel.col', { style: { gap: '10px' } },
+    el('div.row', el('div.caps.grow', 'My plan'), el('div.small.brass-text', pd.done ? 'Finished' : `Day ${pd.day} of ${pd.days}`)),
+    p.source ? el('div.small.soft', p.source) : null, dots,
+    p.intro ? el('div.small', { style: { color: 'var(--softer)' } }, p.intro) : null,
+    ...fields, el('div.list-gap', list),
+    p.safety ? el('div.tiny.soft', p.safety) : null,
+    el('div.row', el('button.ghost.grow', { onclick: () => confirmBox('Restart the plan from day 1 today? Your saved sessions are kept.', 'Restart', () => { p.startedAt = Date.now(); saveSettings({ plan: p }); refresh(); }) }, 'Restart'),
+      el('button.ghost.grow', { onclick: () => confirmBox('Remove this plan from the app? Your saved sessions are kept, and your normal routine comes back.', 'Remove', () => { saveSettings({ plan: null }); refresh(); }) }, 'Remove plan')));
+}
+
 let filter = null;
 export async function exercisesScreen(root) {
   const set = S();
   const sc = new Scoring(await sessions());
   const title = el('div', { style: { fontSize: '18px', fontWeight: 500 } }), sub = el('div.small');
   const card = el('div.row', { style: { background: 'var(--metal)', color: 'var(--on-brass)', borderRadius: '16px', padding: '14px 14px 14px 18px' } },
-    el('div.col.grow', { style: { gap: '2px' } }, el('div.caps', { style: { color: 'var(--on-brass)' } }, 'My routine'), title, sub),
+    el('div.col.grow', { style: { gap: '2px' } }, el('div.caps', { style: { color: 'var(--on-brass)' } }, set.plan ? set.plan.name : 'My routine'), title, sub),
     el('button', { style: { background: 'var(--on-brass)', color: '#EFE1BB', borderRadius: '21px', padding: '10px 20px', fontWeight: 500 }, onclick: () => { const ids = routineList(set).map(e => e.id); if (ids.length) go('#/exercise/routine/' + ids.join(',')); } }, 'Start'));
   const dirNote = el('div.small.soft');
+  const planBox = planPanel(set, sc, () => go('#/exercises', true));
   const chips = el('div.chips'), list = el('div');
-  root.append(header('Exercises', null, () => go('#/voice')), goalSwitch(() => go('#/exercises')), card, chips, list,
+  root.append(header('Exercises', null, () => go('#/voice')), goalSwitch(() => go('#/exercises')), card, planBox, chips, list,
     el('div.notice', el('div', { style: { color: 'var(--brass-t)', fontWeight: 500, marginBottom: '4px' } }, 'Keep your voice healthy'),
       "Stop if it hurts, feels strained or goes hoarse. Sip water, keep the neck and jaw relaxed, and don't push the larynx with your hands. 20–30 minutes a day is plenty, and rest days are fine." +
       (dirOf(set) === 'ftm' ? ' Don\'t force your pitch lower than is comfortable, and don\'t use vocal fry to sound deeper. On testosterone the voice can crack and feel unsteady for a while — that\'s normal; keep it gentle.' : '')));
@@ -159,7 +199,8 @@ export async function exercisesScreen(root) {
   function render() {
     const routine = routineList(set), ids = routine.map(e => e.id);
     const today = new Set(sc.daySessions(Date.now()).flatMap(s => s.exercises.map(e => e.id)));
-    title.textContent = `${routine.length} chosen · ${routine.reduce((a, e) => a + e.minutes, 0)} min`;
+    const pd = planDay(set);
+    title.textContent = pd ? (pd.done ? `Finished · ${pd.days} days` : `Day ${pd.day} of ${pd.days} · ${routine.reduce((a, e) => a + e.minutes, 0)} min`) : `${routine.length} chosen · ${routine.reduce((a, e) => a + e.minutes, 0)} min`;
     sub.textContent = `Today: ${routine.filter(e => today.has(e.id)).length} of ${routine.length} done`;
     chips.replaceChildren(...[null, ...Object.keys(Categories)].map(c => el('button.chip' + (filter === c ? '.on' : ''), { onclick: () => { filter = c; render(); } }, c ? Categories[c].chip : 'All')));
     list.replaceChildren();
@@ -174,7 +215,7 @@ export async function exercisesScreen(root) {
             el('div', { style: { fontSize: '15px', fontWeight: 500 } }, ex.name + (today.has(ex.id) ? '  ✓' : '')),
             el('div.small', { style: { color: 'var(--softer)' } }, ex.how),
             el('div.tiny.soft', `${ex.minutes} min · ${ex.meter} · tap to try`)),
-          el('button.add' + (inR ? '.on' : ''), { 'aria-label': (inR ? 'Remove ' : 'Add ') + ex.name + ' to routine', onclick: () => {
+          set.plan ? null : el('button.add' + (inR ? '.on' : ''), { 'aria-label': (inR ? 'Remove ' : 'Add ') + ex.name + ' to routine', onclick: () => {
             const cur = new Set(ids); if (inR) cur.delete(ex.id); else cur.add(ex.id);
             saveSettings(routinePatch(dirOf(set), [...cur])); render();
           } }, inR ? 'Added' : 'Add')));
@@ -199,6 +240,8 @@ export function exerciseScreen(root, mode, idList) {
 
   const catText = el('div.caps'), nameText = el('div', { style: { fontSize: '19px', fontWeight: 500 } }), roundText = el('div.mono.soft', { style: { fontSize: '14px' } });
   const how = el('div', { style: { fontSize: '15px', color: '#C9D2DB', lineHeight: 1.45 } });
+  const stepsBox = el('ol', { style: { margin: '0', paddingLeft: '22px', color: '#EEF2F5', fontSize: '15px', lineHeight: 1.45, display: 'flex', flexDirection: 'column', gap: '6px' } });
+  const caution = el('div.notice', { style: { padding: '9px 12px' } });
   const passage = el('div.panel.passage', PASSAGE);
   const bigTimer = el('div.big', { style: { textAlign: 'center', margin: '24px 0' } });
   const chart = pitchChart(300);
@@ -215,14 +258,17 @@ export function exerciseScreen(root, mode, idList) {
 
   root.append(
     el('div.row', el('button.round', { 'aria-label': 'Close exercise', html: icons.close, onclick: leave }), el('div.col.grow', { style: { gap: '2px' } }, catText, nameText), roundText),
-    how, passage, bigTimer, chart, meters, tiles, el('div.spacer'), el('div.row', leftBtn, mainBtn), fileIn);
+    how, stepsBox, caution, passage, bigTimer, chart, meters, tiles, el('div.spacer'), el('div.row', leftBtn, mainBtn), fileIn);
   load();
 
   function load() {
     phase = 'READY'; exFrames = []; exTimes = []; smooth.clear(); t = 0; lastRound = -1;
     const e = ex();
-    catText.textContent = Categories[e.cat].chip.toUpperCase() + (exercises.length > 1 ? ` · ${index + 1} OF ${exercises.length}` : '');
+    catText.textContent = (Categories[e.cat] || PLAN_CAT).chip.toUpperCase() + (exercises.length > 1 ? ` · ${index + 1} OF ${exercises.length}` : '');
     nameText.textContent = e.name; how.textContent = e.how;
+    stepsBox.replaceChildren(...(e.steps || []).map(t => el('li', fillPlan(t, set.plan))));
+    stepsBox.classList.toggle('hidden', !e.steps?.length);
+    caution.textContent = e.caution || ''; caution.classList.toggle('hidden', !e.caution);
     passage.classList.toggle('hidden', e.kind !== 'READ');
     const timerOnly = e.kind === 'TIMER';
     bigTimer.classList.toggle('hidden', !timerOnly); bigTimer.textContent = fmtTime(e.minutes * 60);
@@ -232,7 +278,7 @@ export function exerciseScreen(root, mode, idList) {
     if (e.roundSeconds > 0) { chart.st.roundSeconds = e.roundSeconds; chart.st.guide = (tt) => guide(e, tt, set.target); roundText.textContent = `Round 1/${e.rounds}`; }
     else { chart.st.roundSeconds = 0; chart.st.guide = null; roundText.textContent = ''; }
     chart.redraw();
-    tScore.l.textContent = ({ GLIDE: 'Match', LADDER: 'Match', HOLD: 'On target', TARGET: 'On target', MIMIC: 'On target', RESONANCE: dir === 'ftm' ? 'Darkness' : 'Resonance', WEIGHT: dir === 'ftm' ? 'Fullness' : 'Lightness', MELODY: dir === 'ftm' ? 'Steadiness' : 'Melody', READ: dir === 'ftm' ? 'Male range' : 'Female range', BASELINE: 'Median' })[e.kind] || 'Voice time';
+    tScore.l.textContent = e.plan && e.kind !== 'TIMER' ? 'Median' : ({ GLIDE: 'Match', LADDER: 'Match', HOLD: 'On target', TARGET: 'On target', MIMIC: 'On target', PLANFREE: 'Median', RESONANCE: dir === 'ftm' ? 'Darkness' : 'Resonance', WEIGHT: dir === 'ftm' ? 'Fullness' : 'Lightness', MELODY: dir === 'ftm' ? 'Steadiness' : 'Melody', READ: dir === 'ftm' ? 'Male range' : 'Female range', BASELINE: 'Median' })[e.kind] || 'Voice time';
     tScore.v.textContent = '–'; tNow.v.textContent = '–'; tTime.v.textContent = fmtTime(0);
     mA.set(null, '–'); mB.set(null, '–');
     leftBtn.textContent = e.kind === 'MIMIC' ? (clip ? 'Clip chosen ✓' : 'Open clip') : exercises.length > 1 ? 'Skip' : 'Back';
@@ -279,7 +325,10 @@ export function exerciseScreen(root, mode, idList) {
     const r = smooth.resonance(); if (r != null) mA.set(r / 100, String(Math.round(r)));
     const w = smooth.weight(); if (w != null) mB.set(w / 100, String(Math.round(w)));
     tTime.v.textContent = fmtTime(t);
-    if (exFrames.length % 10 === 0) tScore.v.textContent = scoreText(score());
+    if (exFrames.length % 10 === 0) {
+      if (e.plan) { const v = exFrames.filter(x => x.f0 > 0).map(x => x.f0); if (v.length) tScore.v.textContent = `${Math.round(median(v))} Hz`; }
+      else tScore.v.textContent = scoreText(score());
+    }
     if (t >= maxSeconds()) stop();
   }
 
@@ -313,8 +362,14 @@ export function exerciseScreen(root, mode, idList) {
     session.activeSeconds += secs;
     const s = score(); tScore.v.textContent = scoreText(s);
     let detail = scoreText(s);
+    let saveScore = s;
+    if (e.plan) {
+      const v = exFrames.filter(f => f.f0 > 0).map(f => f.f0);
+      detail = e.kind === 'TIMER' || !v.length ? 'done' : `done · ${Math.round(median(v))} Hz`; saveScore = 100;
+      tScore.v.textContent = v.length ? `${Math.round(median(v))} Hz` : '✓';
+    }
     if (e.kind === 'BASELINE') { if (s > 0) saveSettings({ baseline: s }); detail = `comfortable pitch ${s} Hz`; }
-    if (e.kind === 'TIMER' || exFrames.some(f => f.f0 > 0)) session.results.push({ id: e.id, score: e.kind === 'BASELINE' ? 100 : s, seconds: secs, detail });
+    if (e.kind === 'TIMER' || exFrames.some(f => f.f0 > 0)) session.results.push({ id: e.id, score: e.kind === 'BASELINE' ? 100 : saveScore, seconds: secs, detail });
     how.textContent = e.kind === 'BASELINE' ? `Your comfortable pitch right now is about ${s} Hz. Your target is ${Math.round(set.target)} Hz — move toward it in small steps.`
       : e.kind === 'TIMER' ? 'Done. Nice and calm.' : `Done — ${tScore.l.textContent.toLowerCase()} ${scoreText(s)}.`;
     mainBtn.textContent = index < exercises.length - 1 ? 'Next exercise' : 'Finish';
@@ -322,7 +377,8 @@ export function exerciseScreen(root, mode, idList) {
   function next() { if (phase === 'RUNNING') stop(); if (index < exercises.length - 1) { index++; load(); } else finish(); }
   function finish() {
     if (!session.results.length) { go('#/exercises'); return; }
-    setPending(session.build(isRoutine ? exercises.length : 0)); go('#/report', true);
+    const planName = set.plan && session.results.some(r => r.id.startsWith('plan_')) ? set.plan.name : null;
+    setPending(session.build(isRoutine ? exercises.length : 0, planName)); go('#/report', true);
   }
   function leave() { if (phase === 'RUNNING') stop(); finish(); }
   onLeave(() => { if (phase === 'RUNNING') { analyzer?.stop(); clipPlayer?.stop(); clearTimeout(timer); } });

@@ -168,7 +168,8 @@ class Scoring(private val ctx: Context) {
         val fullRoutineDay = routine.isNotEmpty() && byDay.values.any { day -> routine.all { id -> day.any { s -> s.exercises.any { it.id == id } } } }
         val weekGoal = settings.weeklyGoal
         val bestWeek = sessions.map { daysTrainedInWeek(it.id) }.maxOrNull() ?: 0
-        val cats = sessions.flatMap { s -> s.exercises.mapNotNull { Exercises.byId(it.id)?.cat } }.toSet()
+        val cats = sessions.flatMap { s -> s.exercises.mapNotNull { Exercises.byId(it.id)?.cat } }.filter { it != Category.PLAN }.toSet()
+        val ncats = Category.values().size - 1
         val streak = streak(); val longest = longestStreak()
         fun rem(n: Int, unit: String) = "${n.coerceAtLeast(0)} $unit left"
         val my = myStats
@@ -209,7 +210,7 @@ class Scoring(private val ctx: Context) {
             Triple("sessions10", "10 sessions", "Saved 10 sessions") to ((sessions.size >= 10) to rem(10 - sessions.size, "sessions")),
             Triple("sessions50", "50 sessions", "Saved 50 sessions") to ((sessions.size >= 50) to rem(50 - sessions.size, "sessions")),
             Triple("sessions100", "100 sessions", "Saved 100 sessions") to ((sessions.size >= 100) to rem(100 - sessions.size, "sessions")),
-            Triple("allcats", "All-rounder", "Tried every kind of exercise") to ((cats.size >= Category.values().size) to "${cats.size} of ${Category.values().size} kinds"),
+            Triple("allcats", "All-rounder", "Tried every kind of exercise") to ((cats.size >= ncats) to "${cats.size} of $ncats kinds"),
             Triple("notes5", "Journal", "Wrote notes on 5 sessions") to ((sessions.count { it.notes.isNotBlank() } >= 5) to "${sessions.count { it.notes.isNotBlank() }} of 5"),
             Triple("hours5", "5 hours", "5 hours of training in total") to ((totalMinutes >= 300) to "%.0f of 300 min".format(totalMinutes)),
             Triple("step4", "Everyday voice", "Reached the last training step") to ((currentStepIndex() >= 3) to "step ${currentStepIndex() + 1} of 4"),

@@ -31,7 +31,7 @@ export const all = (store) => tx(store, 'readonly', s => s.getAll());
 // ---------------------------------------------------------------- settings (cached in memory)
 
 const defaults = {
-  direction: 'mtf', directionChosen: false, targetMtf: 0, targetFtm: 0, target: 200, tolerance: 10, weeklyGoal: 5, routine: null, routineFtm: null, baseline: 0, unlocked: {},
+  direction: 'mtf', directionChosen: false, targetMtf: 0, targetFtm: 0, target: 200, tolerance: 10, weeklyGoal: 5, routine: null, routineFtm: null, plan: null, baseline: 0, unlocked: {},
   qualityIdx: 1, splitIdx: 1, customMb: '8', evenOut: false,
 };
 let settings = null;

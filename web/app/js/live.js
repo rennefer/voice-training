@@ -44,7 +44,7 @@ export class SessionBuilder {
     this.target = target; this.tolerance = tolerance; this.pcm = []; this.rate = 48000; this.frameSeconds = HOP / 48000;
   }
   add(f) { this.frames.push(f); }
-  build(routineSize = 0) {
+  build(routineSize = 0, plan = null) {
     const fs = this.frameSeconds;
     const stats = computeStats(this.frames, fs, this.target, this.tolerance);
     const per = Math.max(1, Math.floor(0.25 / fs));
@@ -58,7 +58,7 @@ export class SessionBuilder {
     const seconds = this.activeSeconds > 0 ? this.activeSeconds : this.frames.length * fs;
     return {
       id: this.start, seconds, stats, exercises: [...this.results], notes: '', feeling: '',
-      trace, dir: this.dir, target: this.target, tolerance: this.tolerance, routineSize, traceSec: step * fs,
+      trace, dir: this.dir, plan, target: this.target, tolerance: this.tolerance, routineSize, traceSec: step * fs,
       pcm: this.pcm.length ? this.pcm : null, rate: this.rate,
     };
   }

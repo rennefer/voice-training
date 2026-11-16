@@ -41,6 +41,8 @@ class ExerciseActivity : BrassActivity() {
     private lateinit var nameText: TextView
     private lateinit var roundText: TextView
     private lateinit var howText: TextView
+    private lateinit var stepsText: TextView
+    private lateinit var cautionText: TextView
     private lateinit var passage: TextView
     private lateinit var chart: PitchChartView
     private lateinit var meterA: MeterView
@@ -99,6 +101,13 @@ class ExerciseActivity : BrassActivity() {
 
         howText = text("", 15f, 0xFFC9D2DB.toInt()).apply { setLineSpacing(0f, 1.2f) }
         c.add(howText, 12)
+        stepsText = text("", 15f, Brass.TEXT).apply { setLineSpacing(0f, 1.25f) }
+        c.add(stepsText, 10)
+        cautionText = text("", 13f, 0xFFA9B6C2.toInt()).apply {
+            background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 14 * d; setStroke(dp(1), 0x59D6BB85) }
+            setPadding(dp(12), dp(9), dp(12), dp(9))
+        }
+        c.add(cautionText, 10)
 
         passage = text(Exercises.PASSAGE, 17f, Brass.TEXT).apply {
             setLineSpacing(0f, 1.35f); background = Brass.panel(16 * d); setPadding(dp(16), dp(14), dp(16), dp(14))
@@ -147,6 +156,11 @@ class ExerciseActivity : BrassActivity() {
         catText.text = "${ex.cat.chip.uppercase()}" + if (exercises.size > 1) " · ${index + 1} OF ${exercises.size}" else ""
         nameText.text = ex.name
         howText.text = ex.how
+        val plan = settings.plan
+        stepsText.text = ex.steps.mapIndexed { i, st -> "${i + 1}.  ${plan?.fill(st) ?: st}" }.joinToString("\n")
+        stepsText.visibility = if (ex.steps.isEmpty()) View.GONE else View.VISIBLE
+        cautionText.text = ex.caution
+        cautionText.visibility = if (ex.caution.isEmpty()) View.GONE else View.VISIBLE
         passage.visibility = if (ex.kind == Kind.READ) View.VISIBLE else View.GONE
         val timerOnly = ex.kind == Kind.TIMER
         bigTimer.visibility = if (timerOnly) View.VISIBLE else View.GONE
@@ -166,7 +180,7 @@ class ExerciseActivity : BrassActivity() {
             chart.roundSeconds = 0f; chart.guide = null; roundText.text = ""
         }
         chart.idleText = "Tap Start, then follow along"
-        tileScore.first.text = when (ex.kind) {
+        tileScore.first.text = if (ex.cat == Category.PLAN && ex.kind != Kind.TIMER) "Median" else when (ex.kind) {
             Kind.GLIDE, Kind.LADDER -> "Match"; Kind.HOLD, Kind.TARGET, Kind.MIMIC -> "On target"
             Kind.RESONANCE -> if (goal == Goal.FTM) "Darkness" else "Resonance"
             Kind.WEIGHT -> if (goal == Goal.FTM) "Fullness" else "Lightness"
@@ -231,7 +245,7 @@ class ExerciseActivity : BrassActivity() {
         smooth.resonance()?.let { meterA.value = it / 100f; meterA.valueText = it.toInt().toString() }
         smooth.weight()?.let { meterB.value = it / 100f; meterB.valueText = it.toInt().toString() }
         tileTime.second.text = fmtTime(t)
-        if (exFrames.size % 10 == 0) tileScore.second.text = scoreText(score())
+        if (exFrames.size % 10 == 0) tileScore.second.text = if (ex.cat == Category.PLAN) planMedian()?.let { "$it Hz" } ?: "–" else scoreText(score())
         if (t >= maxSeconds) stop()
     }
 
@@ -261,6 +275,9 @@ class ExerciseActivity : BrassActivity() {
         }
     }
 
+    /** Median pitch of this exercise so far, rounded, or null. */
+    private fun planMedian(): Int? = exFrames.filter { it.voiced }.map { it.f0 }.takeIf { it.isNotEmpty() }?.let { SessionStats.medianOf(it).toInt() }
+
     private fun scoreText(s: Int) = when (ex.kind) {
         Kind.BASELINE -> "$s Hz"
         Kind.RESONANCE, Kind.WEIGHT -> "$s"
@@ -277,15 +294,19 @@ class ExerciseActivity : BrassActivity() {
         session.activeSeconds += secs
         val s = score()
         tileScore.second.text = scoreText(s)
-        val detail = when (ex.kind) {
-            Kind.BASELINE -> { if (s > 0) settings.baseline = s.toFloat(); "comfortable pitch $s Hz" }
+        val med = planMedian()
+        val detail = when {
+            ex.cat == Category.PLAN -> if (ex.kind == Kind.TIMER || med == null) "done" else "done · $med Hz"
+            ex.kind == Kind.BASELINE -> { if (s > 0) settings.baseline = s.toFloat(); "comfortable pitch $s Hz" }
             else -> scoreText(s)
         }
-        if (ex.kind == Kind.TIMER || exFrames.any { it.voiced }) session.results += ExerciseResult(ex.id, if (ex.kind == Kind.BASELINE) 100 else s, secs, detail)
+        if (ex.cat == Category.PLAN) tileScore.second.text = med?.let { "$it Hz" } ?: "✓"
+        val saved = if (ex.kind == Kind.BASELINE || ex.cat == Category.PLAN) 100 else s
+        if (ex.kind == Kind.TIMER || exFrames.any { it.voiced }) session.results += ExerciseResult(ex.id, saved, secs, detail)
         howText.text = when (ex.kind) {
             Kind.BASELINE -> "Your comfortable pitch right now is about $s Hz. Your target is ${settings.target.toInt()} Hz — move toward it in small steps."
             Kind.TIMER -> "Done. Nice and calm."
-            else -> "Done — ${tileScore.first.text.toString().lowercase()} ${scoreText(s)}."
+            else -> if (ex.cat == Category.PLAN) "Done." + (med?.let { " Your median pitch was $it Hz." } ?: "") else "Done — ${tileScore.first.text.toString().lowercase()} ${scoreText(s)}."
         }
         mainBtn.text = if (index < exercises.size - 1) "Next exercise" else "Finish"
     }
@@ -298,6 +319,7 @@ class ExerciseActivity : BrassActivity() {
     private fun finishSession() {
         if (session.results.isEmpty()) { finish(); return }
         val s = session.build(if (isRoutine) exercises.size else 0)
+        if (session.results.any { it.id.startsWith("plan_") }) settings.plan?.let { p -> s.plan = p.name; s.notePrompt = p.notePrompt.ifEmpty { null } }
         VoiceStore.pending = s
         startActivity(Intent(this, ReportActivity::class.java))
         finish()

@@ -56,15 +56,17 @@ export async function reportScreen(root, idStr) {
   const feelRow = el('div.row', { style: { gap: '4px' } });
   const renderFeel = () => feelRow.replaceChildren(...['Easy', 'OK', 'Strained'].map(f => el('button.chip' + (s.feeling === f ? '.on' : ''), { onclick: () => { s.feeling = s.feeling === f ? '' : f; renderFeel(); } }, f)));
   renderFeel();
-  const notes = el('textarea', { rows: 3, placeholder: 'Notes — how your voice felt, what worked, what to try next', 'aria-label': 'Notes' });
+  const prompt = s.plan && S().plan?.notePrompt ? S().plan.notePrompt : '';
+  const notes = el('textarea', { rows: prompt ? 4 : 3, placeholder: prompt ? 'Your answer…' : 'Notes — how your voice felt, what worked, what to try next', 'aria-label': prompt || 'Notes' });
   notes.value = s.notes || '';
-  root.append(el('div.panel.col', el('div.row', el('div.grow', { style: { fontWeight: 500, fontSize: '13px' } }, 'How did it feel?'), feelRow), el('div.small.soft', 'Notes'), notes));
+  root.append(el('div.panel.col', el('div.row', el('div.grow', { style: { fontWeight: 500, fontSize: '13px' } }, 'How did it feel?'), feelRow), el('div.small' + (prompt ? '.brass-text' : '.soft'), prompt || 'Notes'), notes));
   root.append(el('div.tiny.soft', 'Measured with the phone microphone. Resonance and weight are estimates — compare sessions recorded the same way.'));
 
   const saveBtn = el('button.btn.grow', { onclick: save }, saved ? 'Save changes' : 'Save session');
   root.append(el('div.row', el('button.ghost.grow', { style: { minHeight: '52px' }, onclick: pdf }, 'PDF report'), saveBtn));
   if (saved) root.append(el('button.ghost', { onclick: () => confirmBox("Delete this session? It can't be undone.", 'Delete', async () => { await deleteSession(s.id); go('#/progress', true); }) }, 'Delete session'));
 
+  if (prompt) s.notePrompt = prompt;
   async function save() {
     s.notes = notes.value.trim();
     const before = snapshot(new Scoring(await sessions()));

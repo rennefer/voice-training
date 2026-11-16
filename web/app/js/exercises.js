@@ -1,3 +1,5 @@
+import { S } from './store.js';
+
 // Training exercises for both directions (same as Exercises.kt).
 // dir: 'both' | 'mtf' (feminine voice) | 'ftm' (masculine voice). Each direction has 25.
 // def: which routines the exercise starts in — 'm' MtF, 'f' FtM, 'mf' both.
@@ -79,7 +81,51 @@ export const ALL_EXERCISES = [
 export const exercisesFor = (dir) => ALL_EXERCISES.filter(e => e.dir === 'both' || e.dir === dir);
 /** Kept for older callers: the current direction's list is chosen by routineList/exercisesFor. */
 export const EXERCISES = ALL_EXERCISES;
-export const byId = (id) => ALL_EXERCISES.find(e => e.id === id);
+export const byId = (id) => ALL_EXERCISES.find(e => e.id === id) || planExercises(S()).find(e => e.id === id);
+
+// ---------------------------------------------------------------- personal plan (imported file, kept on the device)
+
+export const PLAN_CAT = { title: 'MY PLAN', chip: 'My plan', hint: '' };
+
+/** Checks an imported plan file and returns a clean copy, or throws. */
+export function parsePlan(json) {
+  const p = typeof json === 'string' ? JSON.parse(json) : json;
+  if (!p || p.type !== 'recorder-plan' || !Array.isArray(p.exercises) || !p.exercises.length) throw new Error('This is not a Recorder plan file');
+  const str = (v, max = 600) => typeof v === 'string' ? v.slice(0, max) : '';
+  return {
+    name: str(p.name, 80) || 'My plan', source: str(p.source, 120), days: Math.max(1, Math.min(60, p.days | 0 || 7)),
+    intro: str(p.intro), safety: str(p.safety), notePrompt: str(p.notePrompt, 300),
+    fields: (Array.isArray(p.fields) ? p.fields : []).slice(0, 6).map(f => ({ key: str(f.key, 30).replace(/\W/g, ''), label: str(f.label, 60), hint: str(f.hint, 60) })).filter(f => f.key),
+    exercises: p.exercises.slice(0, 20).map((e, i) => ({
+      id: str(e.id, 30).replace(/\W/g, '') || 'e' + i, name: str(e.name, 80) || `Exercise ${i + 1}`,
+      kind: ['TIMER', 'FREE', 'TARGET', 'HOLD', 'RESONANCE', 'WEIGHT', 'MELODY', 'READ'].includes(e.kind) ? e.kind : 'FREE',
+      minutes: Math.max(1, Math.min(20, e.minutes | 0 || 1)), optional: !!e.optional,
+      purpose: str(e.purpose), steps: (Array.isArray(e.steps) ? e.steps : []).slice(0, 8).map(x => str(x)), caution: str(e.caution),
+    })),
+    values: {}, startedAt: Date.now(),
+  };
+}
+
+/** Fills {mword}-style placeholders with the user's own words. */
+export function fillPlan(text, plan) {
+  return String(text || '').replace(/\{(\w+)\}/g, (_, k) => (plan?.values?.[k] || '').trim() || `(${(plan?.fields || []).find(f => f.key === k)?.label.toLowerCase() || k} — add it on the Exercises screen)`);
+}
+
+/** The plan's exercises in the app's exercise shape (ids start with "plan_"). */
+export function planExercises(set) {
+  const p = set?.plan; if (!p) return [];
+  return p.exercises.map(e => ({ id: 'plan_' + e.id, dir: 'both', cat: 'PLAN', name: e.name, how: e.purpose, steps: e.steps, caution: e.caution,
+    minutes: e.minutes, kind: e.kind, meter: e.kind === 'TIMER' ? 'timer' : 'live pitch', def: '', roundSeconds: 0, rounds: 1, optional: e.optional, plan: true }));
+}
+
+/** Day of the plan (1-based) and whether it is finished. */
+export function planDay(set, now = Date.now()) {
+  const p = set?.plan; if (!p) return null;
+  const d0 = new Date(p.startedAt); d0.setHours(0, 0, 0, 0);
+  const d1 = new Date(now); d1.setHours(0, 0, 0, 0);
+  const day = Math.round((d1 - d0) / 864e5) + 1;
+  return { day: Math.min(day, p.days), days: p.days, done: day > p.days };
+}
 
 export const PASSAGE =
   'The morning light came slowly over the hills, and the lake was so still that it held the whole sky. ' +
@@ -104,10 +150,12 @@ export function guide(ex, t, target) {
 export const dirOf = (settings) => settings.direction === 'ftm' ? 'ftm' : 'mtf';
 const routineKey = (dir) => dir === 'ftm' ? 'routineFtm' : 'routine';
 export function routineIds(settings, dir = dirOf(settings)) {
+  if (settings.plan) return planExercises(settings).filter(e => !e.optional).map(e => e.id);
   return settings[routineKey(dir)] || exercisesFor(dir).filter(e => e.def.includes(dir === 'ftm' ? 'f' : 'm')).map(e => e.id);
 }
 export function routinePatch(dir, ids) { return { [routineKey(dir)]: ids }; }
 export function routineList(settings, dir = dirOf(settings)) {
+  if (settings.plan) return planExercises(settings).filter(e => !e.optional);
   const ids = routineIds(settings, dir);
   return exercisesFor(dir).filter(e => ids.includes(e.id));
 }
@@ -118,6 +166,7 @@ export const goalPct = (stats, dir) => dir === 'ftm' ? stats.pctMale : stats.pct
 export function sessionLabel(s) {
   const ex = s.exercises || [];
   if (!ex.length) return 'Live practice';
+  if (s.plan) return `${s.plan} · ${ex.length} exercise${ex.length === 1 ? '' : 's'}`;
   if (s.routineSize > 0 && ex.length >= s.routineSize) return `Routine · ${ex.length} exercises`;
   if (ex.length === 1) return byId(ex[0].id)?.name || 'Exercise';
   return `${ex.length} exercises`;

@@ -119,13 +119,16 @@ export async function pdfReport(s, all) {
     const lines = doc.splitTextToSize(s.exercises.map(e => `${byId(e.id)?.name || e.id} ${e.detail}`).join('  ·  '), x1 - x0);
     doc.text(lines, x0, y); y += lines.length * 12 + 10;
   }
-  if ((s.notes || '').trim() || s.feeling) {
+  if ((s.notes || '').trim() || s.feeling || s.notePrompt) {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+    const q = s.notePrompt ? doc.splitTextToSize(clean(s.notePrompt), x1 - x0 - 20) : [];
     const lines = doc.splitTextToSize(clean((s.notes || '').trim() || '–'), x1 - x0 - 20);
-    const bh = lines.length * 13 + 30;
+    const bh = lines.length * 13 + q.length * 12 + (q.length ? 8 : 0) + 30;
     rect(x0, y, 3, bh, RULE); rect(x0 + 3, y, x1 - x0 - 3, bh, [250, 248, 243]);
     txt('Notes' + (s.feeling ? ` · felt ${s.feeling}` : ''), x0 + 12, y + 16, 10.5, INK, true);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...INK); doc.text(lines, x0 + 12, y + 32);
+    let ty = y + 32;
+    if (q.length) { doc.setFont('helvetica', 'italic'); doc.setFontSize(9.5); doc.setTextColor(...BRASS); doc.text(q, x0 + 12, ty); ty += q.length * 12 + 8; }
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...INK); doc.text(lines, x0 + 12, ty);
   }
   rect(x0, H - 50, x1 - x0, 0.5, LINE);
   txt('Measured with the phone microphone. Resonance and vocal weight are estimates; compare sessions recorded the same way (same room, same distance).', x0, H - 36, 7, SOFT);

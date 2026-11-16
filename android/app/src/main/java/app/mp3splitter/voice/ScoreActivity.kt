@@ -52,6 +52,31 @@ class ScoreActivity : BrassActivity() {
         dialBox.addView(mid, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
         c.addView(dialBox, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(250)).apply { topMargin = dp(8) })
 
+        // imported plan: day X of N and today's progress
+        settings.plan?.let { plan ->
+            val (day, done) = plan.day(now)
+            val r = plan.routine
+            val doneToday = sc.daySessions(now).flatMap { s -> s.exercises.map { it.id } }.toSet()
+            val n = r.count { it.id in doneToday }
+            val card = row().apply { background = Brass.metal(16 * d); setPadding(dp(18), dp(14), dp(14), dp(14)) }
+            val info = col()
+            info.add(caps(plan.name, Brass.ON_BRASS))
+            info.add(text(if (done) "Plan finished" else "Day $day of ${plan.days}", 18f, Brass.ON_BRASS, "medium"), 2)
+            info.add(text(if (n >= r.size) "Done for today ✓" else "Today: $n of ${r.size} exercises", 12f, Brass.ON_BRASS), 2)
+            card.add(info, weight = 1f)
+            val start = TextView(this).apply {
+                text = "Start"; textSize = 15f; setTextColor(0xFFEFE1BB.toInt()); gravity = Gravity.CENTER
+                background = GradientDrawable().apply { cornerRadius = 21 * d; setColor(Brass.ON_BRASS) }
+                setPadding(dp(20), dp(10), dp(20), dp(10))
+                setOnClickListener {
+                    startActivity(android.content.Intent(this@ScoreActivity, ExerciseActivity::class.java)
+                        .putExtra(ExerciseActivity.EXTRA_IDS, r.map { it.id }.toTypedArray()).putExtra(ExerciseActivity.EXTRA_ROUTINE, true))
+                }
+            }
+            card.add(start, w = LinearLayout.LayoutParams.WRAP_CONTENT)
+            c.add(card, 12)
+        }
+
         // parts
         val parts = panel(col(), 16, 12)
         fun part(name: String, pts: Float, value: String) {

@@ -5,8 +5,12 @@ import android.os.Bundle
 import android.view.Gravity
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
+import android.widget.EditText
 import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import app.mp3splitter.Brass
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /** Exercise library: pick which exercises go into your routine, or run one directly. */
 class ExercisesActivity : BrassActivity() {
@@ -16,6 +20,22 @@ class ExercisesActivity : BrassActivity() {
     private lateinit var routineSub: TextView
     private lateinit var chips: LinearLayout
     private var filter: Category? = null
+    private lateinit var routineCaps: TextView
+    private lateinit var planBox: LinearLayout
+
+    /** Import a plan file (e.g. home exercises from a speech therapist). It stays on this phone. */
+    private val pickPlan = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        try {
+            val text = contentResolver.openInputStream(uri)!!.use { it.readBytes().decodeToString() }
+            val plan = Plan.parse(text)
+            PlanStore.save(this, plan)
+            Toast.makeText(this, "Plan added: ${plan.name}", Toast.LENGTH_SHORT).show()
+            render()
+        } catch (e: Exception) {
+            Toast.makeText(this, e.message ?: "Could not read that file", Toast.LENGTH_LONG).show()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -27,7 +47,7 @@ class ExercisesActivity : BrassActivity() {
         // routine card
         val card = row().apply { background = Brass.metal(16 * d); setPadding(dp(18), dp(14), dp(14), dp(14)) }
         val info = col()
-        info.add(caps("My routine", Brass.ON_BRASS))
+        routineCaps = caps("My routine", Brass.ON_BRASS); info.add(routineCaps)
         routineTitle = text("", 18f, Brass.ON_BRASS, "medium"); info.add(routineTitle, 2)
         routineSub = text("", 12f, Brass.ON_BRASS); info.add(routineSub, 2)
         card.add(info, weight = 1f)
@@ -44,6 +64,9 @@ class ExercisesActivity : BrassActivity() {
         }
         card.add(start, w = LinearLayout.LayoutParams.WRAP_CONTENT)
         c.add(card, 14)
+
+        planBox = col()
+        c.add(planBox, 12)
 
         chips = row()
         val hs = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(chips) }
@@ -68,30 +91,34 @@ class ExercisesActivity : BrassActivity() {
 
     private fun render() {
         val routine = settings.routine
-        val chosen = Exercises.forGoal(settings.goal).filter { it.id in routine }
-        routineTitle.text = "${chosen.size} chosen · ${chosen.sumOf { it.minutes }} min"
+        val plan = settings.plan
+        val chosen = settings.routineList()
         val today = Scoring(this).daySessions(System.currentTimeMillis()).flatMap { s -> s.exercises.map { it.id } }.toSet()
+        routineCaps.text = (plan?.name ?: "My routine").uppercase()
+        routineTitle.text = if (plan != null) plan.day().let { (d, done) -> if (done) "Finished · ${plan.days} days" else "Day $d of ${plan.days} · ${chosen.sumOf { it.minutes }} min" }
+            else "${chosen.size} chosen · ${chosen.sumOf { it.minutes }} min"
+        renderPlan(plan, today)
         routineSub.text = "Today: ${chosen.count { it.id in today }} of ${chosen.size} done"
 
         chips.removeAllViews()
-        val all = listOf<Category?>(null) + Category.values().toList()
+        val all = listOf<Category?>(null) + Category.values().filter { it != Category.PLAN }
         all.forEach { cat ->
             val ch = chip(cat?.chip ?: "All", filter == cat) { filter = cat; render() }
             chips.addView(ch, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34)).apply { rightMargin = dp(6) })
         }
 
         list.removeAllViews()
-        for (cat in Category.values()) {
+        for (cat in Category.values().filter { it != Category.PLAN }) {
             if (filter != null && filter != cat) continue
             val head = row(Gravity.BOTTOM)
             head.add(caps(cat.title), weight = 1f)
             head.add(text(cat.hint, 11f, Brass.TEXT_SOFT), w = LinearLayout.LayoutParams.WRAP_CONTENT)
             list.add(head, 16)
-            for (ex in Exercises.forGoal(settings.goal).filter { it.cat == cat }) list.add(item(ex, ex.id in routine, ex.id in today), 6)
+            for (ex in Exercises.forGoal(settings.goal).filter { it.cat == cat }) list.add(item(ex, ex.id in routine, ex.id in today, plan == null), 6)
         }
     }
 
-    private fun item(ex: Exercise, inRoutine: Boolean, doneToday: Boolean): LinearLayout {
+    private fun item(ex: Exercise, inRoutine: Boolean, doneToday: Boolean, canAdd: Boolean = true): LinearLayout {
         val r = row().apply { background = Brass.panel(14 * d); setPadding(dp(14), dp(11), dp(10), dp(11)) }
         val info = col().apply {
             isClickable = true
@@ -117,7 +144,80 @@ class ExercisesActivity : BrassActivity() {
                 render()
             }
         }
-        r.add(btn, 10, LinearLayout.LayoutParams.WRAP_CONTENT)
+        if (canAdd) r.add(btn, 10, LinearLayout.LayoutParams.WRAP_CONTENT)
         return r
+    }
+
+    /** "My plan" panel: import button, or the plan's days, the user's own words and its exercises. */
+    private fun renderPlan(plan: Plan?, today: Set<String>) {
+        planBox.removeAllViews()
+        if (plan == null) {
+            planBox.add(ghostButton("Import plan file") { pickPlan.launch(arrayOf("application/json", "text/plain", "application/octet-stream", "*/*")) })
+            planBox.add(text("A plan from your speech therapist, stored only on this phone", 11f, Brass.TEXT_SOFT).apply { gravity = Gravity.CENTER }, 6)
+            return
+        }
+        val p = panel(col(), 14, 12)
+        val (day, done) = plan.day()
+        val head = row()
+        head.add(caps("My plan"), weight = 1f)
+        head.add(text(if (done) "Finished" else "Day $day of ${plan.days}", 12f, Brass.BRASS_TEXT), w = LinearLayout.LayoutParams.WRAP_CONTENT)
+        p.add(head)
+        if (plan.source.isNotEmpty()) p.add(text(plan.source, 12f, Brass.TEXT_SOFT), 4)
+        // one circle per day, filled when the plan was trained that day
+        val sessions = VoiceStore.all(this).filter { it.plan != null && it.id >= Plan.startOfDay(plan.startedAt) }
+        val trained = sessions.map { Plan.startOfDay(it.id) }.toSet()
+        val dots = row()
+        for (i in 0 until plan.days) {
+            val dayStart = Plan.startOfDay(plan.startedAt + i * 86_400_000L + 3_600_000L)
+            val ok = dayStart in trained; val isToday = i + 1 == day && !done
+            val dot = text(if (ok) "✓" else "${i + 1}", 12f, if (ok) Brass.ON_BRASS else if (isToday) 0xFFEFE1BB.toInt() else Brass.TEXT_SOFT).apply {
+                gravity = Gravity.CENTER
+                background = if (ok) Brass.metal(15 * d, oval = true) else android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setStroke(dp(if (isToday) 2 else 1), if (isToday) Brass.BRASS_TEXT else 0x33FFFFFF)
+                }
+            }
+            dots.addView(dot, LinearLayout.LayoutParams(dp(30), dp(30)).apply { if (i > 0) marginStart = dp(6) })
+        }
+        p.add(dots, 10)
+        if (plan.intro.isNotEmpty()) p.add(text(plan.intro, 13f, 0xFFA9B6C2.toInt()), 10)
+        for (f in plan.fields) {
+            p.add(text(f.label, 12f, Brass.TEXT), 10)
+            val input = EditText(this).apply {
+                setText(plan.values[f.key] ?: ""); hint = f.hint; textSize = 15f; setTextColor(Brass.TEXT); setHintTextColor(0x668FA1B0)
+                isSingleLine = true; background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 10 * d; setColor(0x800D141C.toInt()); setStroke(dp(1), 0x1AFFFFFF) }
+                setPadding(dp(10), dp(9), dp(10), dp(9)); contentDescription = f.label
+                setOnFocusChangeListener { _, has -> if (!has) { plan.values[f.key] = text.toString().trim(); PlanStore.save(this@ExercisesActivity, plan) } }
+            }
+            p.add(input, 4)
+        }
+        for (ex in plan.exercises) {
+            val r = col().apply {
+                background = Brass.panel(14 * d); setPadding(dp(14), dp(10), dp(14), dp(10)); isClickable = true
+                setOnClickListener { startActivity(Intent(this@ExercisesActivity, ExerciseActivity::class.java).putExtra(ExerciseActivity.EXTRA_IDS, arrayOf(ex.id))) }
+            }
+            r.add(text(if (ex.id in today) "${ex.name}  ✓" else ex.name, 14f, Brass.TEXT, "medium"))
+            r.add(text("${ex.minutes} min · ${ex.meter}" + if (ex.optional) " · optional" else "", 11f, Brass.TEXT_SOFT), 2)
+            p.add(r, 6)
+        }
+        if (plan.safety.isNotEmpty()) p.add(text(plan.safety, 11f, Brass.TEXT_SOFT), 10)
+        val btns = row()
+        btns.add(ghostButton("Restart") {
+            MaterialAlertDialogBuilder(this).setMessage("Restart the plan from day 1 today? Your saved sessions are kept.")
+                .setPositiveButton("Restart") { _, _ -> plan.startedAt = System.currentTimeMillis(); PlanStore.save(this, plan); render() }
+                .setNegativeButton("Cancel", null).show()
+        }, weight = 1f)
+        btns.add(ghostButton("Remove plan") {
+            MaterialAlertDialogBuilder(this).setMessage("Remove this plan from the app? Your saved sessions are kept, and your normal routine comes back.")
+                .setPositiveButton("Remove") { _, _ -> PlanStore.save(this, null); render() }
+                .setNegativeButton("Cancel", null).show()
+        }, 8, weight = 1f)
+        p.add(btns, 12)
+        planBox.add(p)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        currentFocus?.clearFocus()   // saves a field that is still being edited
     }
 }

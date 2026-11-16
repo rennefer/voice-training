@@ -134,14 +134,14 @@ class ReportActivity : BrassActivity() {
         np.add(fr)
         renderFeel()
         notes = EditText(this).apply {
-            setText(s.notes); hint = "Notes — how your voice felt, what worked, what to try next"
+            setText(s.notes); hint = if (s.notePrompt != null) "Your answer…" else "Notes — how your voice felt, what worked, what to try next"
             setTextColor(Brass.TEXT); setHintTextColor(Brass.TEXT_SOFT); textSize = 14f
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             minLines = 2; gravity = Gravity.TOP
             background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 10 * d; setColor(0x800D141C.toInt()); setStroke(dp(1), 0x1AFFFFFF) }
             setPadding(dp(10), dp(8), dp(10), dp(8))
         }
-        np.add(text("Notes", 12f, Brass.TEXT_SOFT), 10)
+        np.add(s.notePrompt?.let { text(it, 13f, Brass.BRASS_TEXT) } ?: text("Notes", 12f, Brass.TEXT_SOFT), 10)
         np.add(notes, 4)
         c.add(np, 12)
 

@@ -145,15 +145,18 @@ object PdfReport {
             y = block(c, txt, x0, y, x1 - x0, paint(9.5f, SOFT)) + 14f
         }
 
-        if (s.notes.isNotBlank() || s.feeling.isNotBlank()) {
+        if (s.notes.isNotBlank() || s.feeling.isNotBlank() || s.notePrompt != null) {
             val title = "Notes" + if (s.feeling.isNotBlank()) " · felt ${s.feeling}" else ""
             val tp = paint(10f, INK)
+            val q = s.notePrompt?.let { StaticLayout.Builder.obtain(it, 0, it.length, paint(9.5f, BRASS).apply { textSkewX = -0.2f }, (x1 - x0 - 20f).toInt()).setLineSpacing(2f, 1f).build() }
+            val qh = q?.let { it.height + 8f } ?: 0f
             val lay = StaticLayout.Builder.obtain(s.notes.ifBlank { "–" }, 0, s.notes.ifBlank { "–" }.length, tp, (x1 - x0 - 20f).toInt()).setLineSpacing(2f, 1f).build()
-            val bh = lay.height + 30f
+            val bh = lay.height + qh + 30f
             c.drawRect(x0, y, x0 + 3f, y + bh, Paint().apply { color = RULE })
             c.drawRect(x0 + 3f, y, x1, y + bh, Paint().apply { color = 0xFFFAF8F3.toInt() })
             c.drawText(title, x0 + 12f, y + 16f, paint(11f, INK, true))
-            c.save(); c.translate(x0 + 12f, y + 22f); lay.draw(c); c.restore()
+            q?.let { c.save(); c.translate(x0 + 12f, y + 22f); it.draw(c); c.restore() }
+            c.save(); c.translate(x0 + 12f, y + 22f + qh); lay.draw(c); c.restore()
             y += bh + 12f
         }
 

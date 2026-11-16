@@ -7,8 +7,10 @@ import java.io.File
 import java.util.Calendar
 
 /** User settings for voice training. */
-class VoiceSettings(ctx: Context) {
+class VoiceSettings(private val ctx: Context) {
     private val p = ctx.getSharedPreferences("voice", Context.MODE_PRIVATE)
+    /** Imported personal plan (e.g. home exercises from a speech therapist), or null. */
+    val plan: Plan? get() = PlanStore.load(ctx)
     var target: Float
         get() = p.getFloat("target", 200f)
         set(v) = p.edit().putFloat("target", v).apply()
@@ -45,7 +47,8 @@ class VoiceSettings(ctx: Context) {
         get() = p.getFloat("baseline", 0f)
         set(v) = p.edit().putFloat("baseline", v).apply()
 
-    fun routineList(): List<Exercise> = Exercises.forGoal(goal).filter { it.id in routine }
+    /** Today's routine: the imported plan if there is one, otherwise the chosen exercises. */
+    fun routineList(): List<Exercise> = plan?.routine ?: Exercises.forGoal(goal).filter { it.id in routine }
 
     /** First date (ms) each achievement was unlocked. */
     fun unlockedAt(id: String): Long = p.getLong("ach_$id", 0L)
@@ -74,11 +77,15 @@ class Session(
     var traceSec: Float = 0.25f,      // seconds per trace point
     var dir: String = "mtf",          // "mtf" or "ftm": direction trained in this session
 ) {
+    /** Name of the imported plan this session belongs to, and the plan's question for the notes. */
+    var plan: String? = null
+    var notePrompt: String? = null
     val goal get() = Goal.of(dir)
     /** Raw audio of an unsaved session (cache), null once saved. */
     var pcmPath: String? = null
     val label: String get() = when {
         exercises.isEmpty() -> "Live practice"
+        plan != null -> "$plan · ${exercises.size} exercise${if (exercises.size == 1) "" else "s"}"
         exercises.size >= routineSize && routineSize > 0 -> "Routine · ${exercises.size} exercises"
         exercises.size == 1 -> Exercises.byId(exercises[0].id)?.name ?: "Exercise"
         else -> "${exercises.size} exercises"
@@ -88,6 +95,7 @@ class Session(
         val o = JSONObject().put("id", id).put("seconds", seconds.toDouble()).put("notes", notes).put("feeling", feeling)
             .put("target", target.toDouble()).put("tolerance", tolerance.toDouble()).put("routineSize", routineSize)
             .put("traceSec", traceSec.toDouble()).put("dir", dir)
+        plan?.let { o.put("plan", it) }; notePrompt?.let { o.put("notePrompt", it) }
         o.put("exercises", JSONArray().apply { exercises.forEach { put(it.toJson()) } })
         o.put("trace", JSONArray().apply { trace.forEach { put(Math.round(it * 10) / 10.0) } })
         stats?.let { s ->
@@ -124,7 +132,9 @@ class Session(
                 o.optString("notes"), o.optString("feeling"),
                 FloatArray(tr.length()) { tr.getDouble(it).toFloat() },
                 o.optDouble("target", 200.0).toFloat(), o.optDouble("tolerance", 10.0).toFloat(), o.optInt("routineSize", 0),
-                o.optDouble("traceSec", 0.25).toFloat(), o.optString("dir", "mtf"))
+                o.optDouble("traceSec", 0.25).toFloat(), o.optString("dir", "mtf")).also { s ->
+                s.plan = o.optString("plan").ifEmpty { null }; s.notePrompt = o.optString("notePrompt").ifEmpty { null }
+            }
         }
     }
 }

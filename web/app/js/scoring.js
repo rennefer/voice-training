@@ -141,7 +141,7 @@ export class Scoring {
     const fullRoutineDay = routine.length > 0 && [...this.byDay.values()].some(day => routine.every(id => day.some(s => s.exercises.some(e => e.id === id))));
     const weekGoal = set.weeklyGoal;
     const bestWeek = Math.max(0, ...this.sessions.map(s => this.daysTrainedInWeek(s.id)));
-    const cats = new Set(this.sessions.flatMap(s => s.exercises.map(e => byId(e.id)?.cat).filter(Boolean)));
+    const cats = new Set(this.sessions.flatMap(s => s.exercises.map(e => byId(e.id)?.cat).filter(c => c && c !== 'PLAN')));
     const ncats = Object.keys(Categories).length;
     const streak = this.streak(), longest = this.longestStreak();
     const max = (f) => st.length ? Math.max(...st.map(f)) : 0;

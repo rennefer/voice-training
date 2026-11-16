@@ -3,7 +3,7 @@ import { el, header, fmtTime, tabs } from './ui.js';
 import { sessions, S, dayKey, dayStart } from './store.js';
 import { dial, bars, trendChart } from './views.js';
 import { Scoring } from './scoring.js';
-import { routineList, sessionLabel, dirOf, goalPct, DIRS } from './exercises.js';
+import { routineList, sessionLabel, dirOf, goalPct, DIRS, planDay } from './exercises.js';
 import { go } from './main.js';
 
 let achFilter = 2, range = 1;
@@ -17,6 +17,17 @@ export async function todayScreen(root) {
     el('div.soft', { style: { fontSize: '14px' } }, !today ? 'Train today to score' : yesterday ? `of 100 · ${today.total - yesterday.total >= 0 ? '+' : ''}${today.total - yesterday.total} vs yesterday` : 'of 100')]);
   d.set((today?.total ?? 0) / 100);
   root.append(d);
+
+  if (set.plan) {
+    const pd = planDay(set, now), r = routineList(set);
+    const doneToday = new Set(sc.daySessions(now).flatMap(x => x.exercises.map(e => e.id)));
+    const n = r.filter(e => doneToday.has(e.id)).length;
+    root.append(el('div.row', { style: { background: 'var(--metal)', color: 'var(--on-brass)', borderRadius: '16px', padding: '14px 14px 14px 18px' } },
+      el('div.col.grow', { style: { gap: '2px' } }, el('div.caps', { style: { color: 'var(--on-brass)' } }, set.plan.name),
+        el('div', { style: { fontSize: '18px', fontWeight: 500 } }, pd.done ? 'Plan finished' : `Day ${pd.day} of ${pd.days}`),
+        el('div.small', n >= r.length ? 'Done for today ✓' : `Today: ${n} of ${r.length} exercises`)),
+      el('button', { style: { background: 'var(--on-brass)', color: '#EFE1BB', borderRadius: '21px', padding: '10px 20px', fontWeight: 500 }, onclick: () => go('#/exercise/routine/' + r.map(e => e.id).join(',')) }, 'Start')));
+  }
 
   const part = (name, pts, value) => el('div.row', { style: { padding: '4px 0' } }, el('div', { style: { width: '116px', fontSize: '13px' } }, name),
     el('div.progress.grow', { style: { height: '8px', borderRadius: '4px' } }, el('div', { style: { width: Math.max(0, Math.min(1, pts / 25)) * 100 + '%' } })),
