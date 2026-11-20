@@ -4,7 +4,7 @@ import { S, saveSettings, sessions, setPending } from './store.js';
 import { Scores, Ranges, computeStats, median, LiveSmoother } from './engine.js';
 import { pitchChart, meter, rangeBar } from './views.js';
 import { LiveAnalyzer, SessionBuilder } from './live.js';
-import { exercisesFor, Categories, byId, guide, PASSAGE, routineList, routineIds, routinePatch, dirOf, DIRS, PLAN_CAT, parsePlan, planExercises, planDay, fillPlan } from './exercises.js';
+import { exercisesFor, Categories, byId, guide, GUIDE_DELAY, PASSAGE, routineList, routineIds, routinePatch, dirOf, DIRS, PLAN_CAT, parsePlan, planExercises, planDay, fillPlan } from './exercises.js';
 import { Scoring } from './scoring.js';
 import { decodeFile, playSamples } from './audio.js';
 import { go, topBar, onLeave } from './main.js';
@@ -311,13 +311,15 @@ export function exerciseScreen(root, mode, idList) {
     if (left <= 0) { stop(); return; }
     timer = setTimeout(tick, 250);
   }
-  const maxSeconds = () => ex().roundSeconds > 0 ? ex().roundSeconds * ex().rounds : ex().minutes * 60;
+  // guided rounds get the guide delay added so the last round finishes too
+  const maxSeconds = () => ex().roundSeconds > 0 ? ex().roundSeconds * ex().rounds + GUIDE_DELAY : ex().minutes * 60;
 
   function onFrame(f) {
+    if (phase !== 'RUNNING' || !analyzer) return;   // frames still queued after the exercise ended
     const e = ex();
     t += analyzer.frameSeconds; exFrames.push(f); exTimes.push(t); session.add(f); smooth.add(f);
     if (e.roundSeconds > 0) {
-      const round = Math.floor(t / e.roundSeconds);
+      const round = Math.min(e.rounds - 1, Math.floor(t / e.roundSeconds));
       if (round !== lastRound) { lastRound = round; chart.clear(); roundText.textContent = `Round ${Math.min(round + 1, e.rounds)}/${e.rounds}`; }
       chart.add(t - round * e.roundSeconds, f.f0);
     } else chart.add(t, f.f0);

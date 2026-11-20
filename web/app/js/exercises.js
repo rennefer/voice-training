@@ -134,10 +134,14 @@ export const PASSAGE =
   'We always said we would go back, and maybe this year we finally will. ' +
   'There is something lovely about a quiet day with nowhere to be.';
 
+/** Seconds the guide line runs behind the clock. */
+export const GUIDE_DELAY = 1;
+
 /** Guide pitch (Hz) at time t within one round, or null. */
 export function guide(ex, t, target) {
   const r = ex.roundSeconds; if (r <= 0) return null;
-  const p = (t % r) / r;
+  // the guide runs 1 s behind the round clock so there is time to react (wraps smoothly: rounds start and end on the same note)
+  const p = (((t - GUIDE_DELAY) % r) + r) % r / r;
   if (ex.kind === 'GLIDE') {
     if (ex.dir === 'ftm') { const hi = target + 60, lo = Math.max(80, target - 25); return hi * Math.pow(lo / hi, Math.sin(Math.PI * p)); }
     const lo = Math.max(110, target - 50), hi = target + 70; return lo * Math.pow(hi / lo, Math.sin(Math.PI * p));

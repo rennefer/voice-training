@@ -120,10 +120,14 @@ object Exercises {
         "There is something lovely about a quiet day with nowhere to be."
 
     /** Guide pitch (Hz) at time t (s) within one round, or null when the exercise has no guide. */
+    /** Seconds the guide line runs behind the clock. */
+    const val GUIDE_DELAY = 1f
+
     fun guide(ex: Exercise, t: Float, target: Float): Float? {
         val r = ex.roundSeconds
         if (r <= 0f) return null
-        val p = (t % r) / r
+        // the guide runs GUIDE_DELAY behind the round clock so there is time to react (wraps smoothly: rounds start and end on the same note)
+        val p = (((t - GUIDE_DELAY) % r) + r) % r / r
         return when (ex.kind) {
             Kind.GLIDE -> if (ex.dir == Dir.FTM) {
                 // downward: from above the target down toward it and back up

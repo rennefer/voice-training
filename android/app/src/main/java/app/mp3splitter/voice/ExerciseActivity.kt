@@ -232,13 +232,15 @@ class ExerciseActivity : BrassActivity() {
         handler.postDelayed({ tickTimer() }, 250)
     }
 
-    private val maxSeconds get() = if (ex.roundSeconds > 0f) ex.roundSeconds * ex.rounds else ex.minutes * 60f
+    // guided rounds get the guide delay added so the last round finishes too
+    private val maxSeconds get() = if (ex.roundSeconds > 0f) ex.roundSeconds * ex.rounds + Exercises.GUIDE_DELAY else ex.minutes * 60f
 
     private fun onFrame(f: VoiceFrame) {
+        if (phase != Phase.RUNNING) return   // frames still queued after the exercise ended
         t += LiveAnalyzer.FRAME_SECONDS
         exFrames += f; exTimes += t; session.add(f); smooth.add(f)
         if (ex.roundSeconds > 0f) {
-            val round = (t / ex.roundSeconds).toInt()
+            val round = (t / ex.roundSeconds).toInt().coerceAtMost(ex.rounds - 1)
             if (round != lastRound) { lastRound = round; chart.clear(); roundText.text = "Round ${(round + 1).coerceAtMost(ex.rounds)}/${ex.rounds}" }
             chart.add(t - round * ex.roundSeconds, f.f0)
         } else chart.add(t, f.f0)
