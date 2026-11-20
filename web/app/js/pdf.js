@@ -1,6 +1,6 @@
 // A4 PDF of one session with jsPDF (same layout as PdfReport.kt). Units: pt.
 import { Scores, Ranges } from './engine.js';
-import { byId, sessionLabel, goalPct, DIRS } from './exercises.js';
+import { byId, sessionLabel, goalPct, DIRS, guide } from './exercises.js';
 
 let loaded = null;
 function loadJsPdf() {
@@ -113,12 +113,6 @@ export async function pdfReport(s, all) {
   tr('Breathiness (HNR)', `${st.hnr.toFixed(0)} dB`, prev ? `${prev.hnr.toFixed(0)} dB` : '–', '');
   y += 22;
 
-  if (s.exercises.length) {
-    txt('Exercises', x0, y, 10.5, INK, true); y += 14;
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...SOFT);
-    const lines = doc.splitTextToSize(s.exercises.map(e => `${byId(e.id)?.name || e.id} ${e.detail}`).join('  ·  '), x1 - x0);
-    doc.text(lines, x0, y); y += lines.length * 12 + 10;
-  }
   if ((s.notes || '').trim() || s.feeling || s.notePrompt) {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
     const q = s.notePrompt ? doc.splitTextToSize(clean(s.notePrompt), x1 - x0 - 20) : [];
@@ -129,8 +123,49 @@ export async function pdfReport(s, all) {
     let ty = y + 32;
     if (q.length) { doc.setFont('helvetica', 'italic'); doc.setFontSize(9.5); doc.setTextColor(...BRASS); doc.text(q, x0 + 12, ty); ty += q.length * 12 + 8; }
     doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...INK); doc.text(lines, x0 + 12, ty);
+    y += bh;
   }
-  rect(x0, H - 50, x1 - x0, 0.5, LINE);
-  txt('Measured with the phone microphone. Resonance and vocal weight are estimates; compare sessions recorded the same way (same room, same distance).', x0, H - 36, 7, SOFT);
+  const footer = () => {
+    rect(x0, H - 50, x1 - x0, 0.5, LINE);
+    txt('Measured with the phone microphone. Resonance and vocal weight are estimates; compare sessions recorded the same way (same room, same distance).', x0, H - 36, 7, SOFT);
+  };
+  footer();
+
+  // one small graph per exercise, two per row, continuing on new pages
+  if (s.exercises.length) {
+    y += 22;
+    const gw = (x1 - x0 - 18) / 2, gh = 92, rowH = gh + 40;
+    const head = () => { txt(`Exercises · ${s.exercises.length}`, x0, y, 10.5, INK, true); y += 10; };
+    if (y + 14 + rowH > H - 60) { doc.addPage(); y = 52; footer(); }
+    head();
+    s.exercises.forEach((r, i) => {
+      const col = i % 2;
+      if (col === 0 && i > 0) y += rowH;
+      if (col === 0 && y + rowH > H - 60) { doc.addPage(); y = 52; footer(); head(); }
+      const bx = x0 + col * (gw + 18), ex = byId(r.id);
+      txt(clean(ex?.name || r.id).slice(0, 48), bx, y + 12, 8.5, INK, true);
+      txt(clean(r.detail || ''), bx + gw, y + 12, 8, BRASS, false, 'right');
+      const tr = r.trace || [], v = tr.filter(f => f > 0);
+      const box = { x: bx + 22, y: y + 18, w: gw - 22, h: gh };
+      if (!v.length) {
+        doc.setDrawColor(...LINE); doc.roundedRect(box.x, box.y, box.w, box.h, 4, 4, 'S');
+        txt(ex?.kind === 'TIMER' ? `Timer · ${fmt(r.seconds)}` : 'No voice measured', box.x + box.w / 2, box.y + box.h / 2 + 3, 8.5, SOFT, false, 'center');
+        return;
+      }
+      const guideAt = ex && ex.roundSeconds > 0 ? (t) => guide(ex, t, s.target) : null;
+      const total = Math.max(r.traceSec, tr.length * r.traceSec);
+      let lo = Math.min(Math.min(...v), s.target) - 20, hi = Math.max(Math.max(...v), s.target) + 20;
+      if (guideAt) for (let t = 0; t <= total; t += total / 40) { const gz = guideAt(t); if (gz != null) { lo = Math.min(lo, gz - 15); hi = Math.max(hi, gz + 15); } }
+      lo = Math.max(60, lo);
+      bands(box, lo, hi, s.target);
+      const px = (t) => box.x + t / total * box.w, py = (f) => box.y + box.h - (f - lo) / (hi - lo) * box.h;
+      if (guideAt) {
+        const pts = []; for (let t = 0; t <= total; t += Math.min(0.1, total / 150)) { const gz = guideAt(t); pts.push(gz == null ? null : [px(t), py(gz)]); }
+        doc.setLineDashPattern([1.5, 2.5], 0); line(pts, RULE, 1.6); doc.setLineDashPattern([], 0);
+      }
+      line(tr.map((f, k) => f > 0 ? [px((k + 0.5) * r.traceSec), py(f)] : null), INK, 1);
+      txt('0:00', box.x, box.y + box.h + 9, 7, SOFT); txt(fmt(total), box.x + box.w, box.y + box.h + 9, 7, SOFT, false, 'right');
+    });
+  }
   return new File([doc.output('blob')], name(), { type: 'application/pdf' });
 }

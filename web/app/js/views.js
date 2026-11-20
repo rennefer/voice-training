@@ -7,12 +7,20 @@ const MALE_TEXT = '#9DB7D0', BRASS_LIGHT = '#EFE1BB', BRASS_MID = '#C8A96C', BRA
 const MONO = "10px 'Roboto Mono', ui-monospace, Menlo, monospace";
 
 /** Live pitch chart: line every 10 Hz, male/female bands, target zone, optional guide. */
+/**
+ * Pitch chart: line every 10 Hz, male/female bands, target zone, optional guide.
+ * Live mode keeps the whole history: drag sideways to scroll back, tap to read a point,
+ * "Live" jumps back to following. The zoom button cycles 6 s / 20 s / 60 s.
+ */
 export function pitchChart(height = 250) {
-  const st = { lo: 120, hi: 280, target: 200, tolerance: 10, window: 6, roundSeconds: 0, guide: null, idleText: null, ts: [], fs: [], now: 0 };
-  const gutter = 36;
+  const st = { lo: 120, hi: 280, target: 200, tolerance: 10, window: 6, roundSeconds: 0, guide: null, idleText: null, ts: [], fs: [], now: 0,
+    follow: true, viewEnd: 0, cursor: -1 };
+  const gutter = 36, WINDOWS = [6, 20, 60];
+  const end = () => st.follow ? Math.max(st.now, st.window) : st.viewEnd;
   const c = canvasView(height, (g, w, h) => {
     const y = (hz) => h - (hz - st.lo) / (st.hi - st.lo) * h;
-    const x = (t) => st.roundSeconds > 0 ? gutter + t / st.roundSeconds * (w - gutter) : gutter + (t - (Math.max(st.now, st.window) - st.window)) / st.window * (w - gutter);
+    const t1 = end(), t0 = t1 - st.window;
+    const x = (t) => st.roundSeconds > 0 ? gutter + t / st.roundSeconds * (w - gutter) : gutter + (t - t0) / st.window * (w - gutter);
     const cl = (v) => Math.max(0, Math.min(h, v));
     g.fillStyle = FEMALE_FILL; g.fillRect(0, cl(y(Ranges.FEMALE_HI)), w, cl(y(Ranges.FEMALE_LO)) - cl(y(Ranges.FEMALE_HI)));
     g.fillStyle = MALE_FILL; g.fillRect(0, cl(y(Ranges.MALE_HI)), w, cl(y(Ranges.MALE_LO)) - cl(y(Ranges.MALE_HI)));
@@ -39,31 +47,108 @@ export function pitchChart(height = 250) {
       }
       g.stroke(); g.setLineDash([]);
     }
+    // time ticks when looking back or zoomed out
+    if (st.roundSeconds <= 0 && st.ts.length && (!st.follow || st.window > 6)) {
+      const step = st.window <= 6 ? 1 : st.window <= 20 ? 5 : 10;
+      g.font = MONO; g.textAlign = 'center'; g.fillStyle = SOFT;
+      for (let t = Math.ceil(Math.max(0, t0) / step) * step; t <= t1; t += step) {
+        const px = x(t); if (px < gutter + 12 || px > w - 12) continue;
+        g.fillStyle = 'rgba(255,255,255,0.06)'; g.fillRect(px, 0, 1, h - 14);
+        g.fillStyle = SOFT; g.fillText(fmtClock(t), px, h - 3);
+      }
+    }
     g.save(); g.beginPath(); g.rect(gutter, 0, w - gutter, h); g.clip();
-    g.strokeStyle = BRASS_LIGHT; g.lineWidth = 2.5; g.lineCap = 'round'; g.lineJoin = 'round';
+    g.strokeStyle = BRASS_LIGHT; g.lineWidth = st.window > 20 ? 1.6 : 2.5; g.lineCap = 'round'; g.lineJoin = 'round';
     g.beginPath(); let pen = false, lastT = -1;
-    for (let i = 0; i < st.ts.length; i++) {
+    // draw only the visible part (binary search for the first point)
+    let i0 = 0;
+    if (st.roundSeconds <= 0) { let lo = 0, hi = st.ts.length; while (lo < hi) { const m = (lo + hi) >> 1; if (st.ts[m] < t0 - 0.5) lo = m + 1; else hi = m; } i0 = lo; }
+    for (let i = i0; i < st.ts.length; i++) {
       const f = st.fs[i], t = st.ts[i];
+      if (st.roundSeconds <= 0 && t > t1 + 0.5) break;
       if (f <= 0 || (lastT >= 0 && t - lastT > 0.12)) pen = false;
       if (f > 0) { const px = x(t), py = y(Math.max(st.lo - 20, Math.min(st.hi + 20, f))); if (!pen) { g.moveTo(px, py); pen = true; } else g.lineTo(px, py); }
       lastT = t;
     }
     g.stroke();
     const n = st.fs.length;
-    if (n && st.fs[n - 1] > 0) { g.fillStyle = '#fff'; g.beginPath(); g.arc(x(st.ts[n - 1]), y(Math.max(st.lo, Math.min(st.hi, st.fs[n - 1]))), 6, 0, 7); g.fill(); }
+    if (st.follow && n && st.fs[n - 1] > 0) { g.fillStyle = '#fff'; g.beginPath(); g.arc(x(st.ts[n - 1]), y(Math.max(st.lo, Math.min(st.hi, st.fs[n - 1]))), 6, 0, 7); g.fill(); }
+    // cursor read-out
+    if (!st.follow && st.cursor >= 0) {
+      const k = nearest(st.cursor), px = x(st.cursor);
+      g.fillStyle = 'rgba(255,255,255,0.8)'; g.fillRect(px - 0.75, 0, 1.5, h);
+      const f = k >= 0 ? st.fs[k] : 0;
+      if (f > 0) { g.fillStyle = '#fff'; g.beginPath(); g.arc(px, y(Math.max(st.lo, Math.min(st.hi, f))), 5, 0, 7); g.fill(); }
+      const label = `${fmtClock(st.cursor)} · ${f > 0 ? Math.round(f) + ' Hz' : 'silence'}`;
+      g.font = "600 12px system-ui, sans-serif"; const tw = g.measureText(label).width + 16;
+      const bx = Math.max(gutter + 2, Math.min(w - tw - 2, px - tw / 2));
+      g.fillStyle = 'rgba(13,20,28,0.9)'; roundRect(g, bx, 6, tw, 22, 11); g.fill();
+      g.fillStyle = '#EFE1BB'; g.textAlign = 'left'; g.fillText(label, bx + 8, 21);
+    }
     g.restore();
     if (!st.ts.length && st.idleText) { g.fillStyle = SOFT; g.font = "15px system-ui, sans-serif"; g.textAlign = 'center'; g.fillText(st.idleText, (gutter + w) / 2, h / 2); }
   }, 'chart');
-  c.st = st;
-  c.clear = () => { st.ts = []; st.fs = []; st.now = 0; c.redraw(); };
-  c.add = (t, f0) => {
+  function nearest(t) {
+    let lo = 0, hi = st.ts.length - 1; if (hi < 0) return -1;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (st.ts[m] < t) lo = m + 1; else hi = m; }
+    return Math.abs(st.ts[lo] - t) < 0.2 ? lo : -1;
+  }
+
+  // overlay buttons
+  const liveBtn = el('button.chip.on', { style: { position: 'absolute', right: '8px', bottom: '8px', minHeight: '32px', display: 'none' }, 'aria-label': 'Back to live', onclick: () => goLive() }, 'Live ▸');
+  const zoomBtn = el('button.chip', { style: { position: 'absolute', left: '42px', bottom: '8px', minHeight: '30px', fontSize: '12px', padding: '0 10px', background: 'rgba(13,20,28,.75)' }, 'aria-label': 'Change time window', onclick: () => {
+    const i = (WINDOWS.indexOf(st.window) + 1) % WINDOWS.length; const keep = end();
+    st.window = WINDOWS[i]; if (!st.follow) st.viewEnd = Math.max(st.window, Math.min(st.now, keep)); sync(); c.redraw();
+  } });
+  const wrap = el('div', { style: { position: 'relative' } }, c, liveBtn, zoomBtn);
+  function sync() {
+    const scroll = st.roundSeconds <= 0 && st.ts.length > 0;
+    liveBtn.style.display = scroll && !st.follow ? '' : 'none';
+    zoomBtn.style.display = scroll ? '' : 'none';
+    zoomBtn.textContent = `↔ ${st.window} s`;
+  }
+  function goLive() { st.follow = true; st.cursor = -1; sync(); c.redraw(); }
+
+  // drag to scroll back, tap to read a point
+  let drag = null;
+  c.addEventListener('pointerdown', (e) => {
+    if (st.roundSeconds > 0 || !st.ts.length) return;
+    c.setPointerCapture(e.pointerId);
+    drag = { x: e.clientX, end: end(), moved: false };
+  });
+  c.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const w = c.getBoundingClientRect().width - gutter, dx = e.clientX - drag.x;
+    if (Math.abs(dx) > 6) drag.moved = true;
+    if (!drag.moved) return;
+    st.viewEnd = Math.max(st.window, Math.min(st.now, drag.end - dx / w * st.window));
+    st.follow = false; st.cursor = -1;
+    if (st.viewEnd >= st.now - 0.05 && dx < 0) st.follow = true;
+    sync(); c.redraw();
+  });
+  c.addEventListener('pointerup', (e) => {
+    if (!drag) return;
+    if (!drag.moved) {
+      const r = c.getBoundingClientRect(), px = e.clientX - r.left;
+      if (px > gutter) { if (st.follow) { st.viewEnd = end(); st.follow = false; } st.cursor = (end() - st.window) + (px - gutter) / (r.width - gutter) * st.window; }
+    }
+    drag = null; sync(); c.redraw();
+  });
+
+  wrap.st = st; wrap.redraw = () => { sync(); c.redraw(); };
+  wrap.clear = () => { st.ts = []; st.fs = []; st.now = 0; st.follow = true; st.cursor = -1; sync(); c.redraw(); };
+  wrap.add = (t, f0) => {
     st.ts.push(t); st.fs.push(f0); st.now = t;
-    if (st.roundSeconds <= 0) { let k = 0; while (k < st.ts.length && st.ts[k] < t - st.window - 0.5) k++; if (k) { st.ts.splice(0, k); st.fs.splice(0, k); } }
-    c.redraw();
+    if (st.roundSeconds <= 0 && st.ts.length > 200000) { st.ts.splice(0, 20000); st.fs.splice(0, 20000); }  // ~2.5 h cap
+    if (st.ts.length === 1) sync();
+    if (st.follow) c.redraw();
   };
-  c.centerOn = (hz, span = 160) => { st.lo = Math.max(60, hz - span / 2); st.hi = st.lo + span; c.redraw(); };
-  return c;
+  wrap.goLive = goLive;
+  wrap.centerOn = (hz, span = 160) => { st.lo = Math.max(60, hz - span / 2); st.hi = st.lo + span; c.redraw(); };
+  return wrap;
 }
+
+function fmtClock(t) { t = Math.max(0, Math.floor(t)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; }
 
 /** Segmented meter with name/value on top and left/right words. */
 export function meter(name, left, right) {
@@ -187,6 +272,34 @@ export function dial(size, inner) {
   wrap.append(c, mid);
   wrap.set = (v) => { st.v = Math.max(0, Math.min(1, v)); c.redraw(); };
   return wrap;
+}
+
+/** Small pitch graph for one exercise: bands, target zone, the exercise's guide line (if any) and your pitch. */
+export function exerciseChart(trace, traceSec, target, tolerance, guideAt = null, height = 120) {
+  const total = Math.max(traceSec, trace.length * traceSec);
+  const v = trace.filter(f => f > 0);
+  let lo = Math.min(v.length ? Math.min(...v) : target, target) - 20, hi = Math.max(v.length ? Math.max(...v) : target, target) + 20;
+  if (guideAt) for (let t = 0; t <= total; t += total / 60) { const gz = guideAt(t); if (gz != null) { lo = Math.min(lo, gz - 15); hi = Math.max(hi, gz + 15); } }
+  lo = Math.max(60, Math.floor(lo / 10) * 10); hi = Math.ceil(hi / 10) * 10; if (hi - lo < 60) hi = lo + 60;
+  const gx = 30;
+  return canvasView(height, (g, w, h) => {
+    const y = (f) => 4 + (1 - (f - lo) / (hi - lo)) * (h - 18), x = (t) => gx + t / total * (w - gx - 4), cl = (q) => Math.max(0, Math.min(h - 14, q));
+    g.fillStyle = FEMALE_FILL; g.fillRect(gx, cl(y(Ranges.FEMALE_HI)), w - gx, cl(y(Ranges.FEMALE_LO)) - cl(y(Ranges.FEMALE_HI)));
+    g.fillStyle = MALE_FILL; g.fillRect(gx, cl(y(Ranges.MALE_HI)), w - gx, cl(y(Ranges.MALE_LO)) - cl(y(Ranges.MALE_HI)));
+    g.fillStyle = 'rgba(239,225,187,0.14)'; g.fillRect(gx, y(target + tolerance), w - gx, y(target - tolerance) - y(target + tolerance));
+    g.font = MONO; g.textAlign = 'left';
+    const step = hi - lo > 120 ? 40 : 20;
+    for (let f = Math.ceil(lo / step) * step; f <= hi; f += step) { g.fillStyle = 'rgba(255,255,255,0.07)'; g.fillRect(gx, y(f), w - gx, 1); g.fillStyle = SOFT; g.fillText(String(f), 0, y(f) + 3.5); }
+    g.textAlign = 'right'; g.fillStyle = SOFT; g.fillText(fmtClock(total), w - 12, h - 3); g.textAlign = 'left'; g.fillText('0:00', gx + 4, h - 3);
+    if (guideAt) {
+      g.strokeStyle = 'rgba(214,187,133,0.7)'; g.lineWidth = 5; g.lineCap = 'round'; g.setLineDash([1.5, 6]); g.beginPath(); let s0 = false;
+      for (let t = 0; t <= total; t += Math.min(0.1, total / 200)) { const gz = guideAt(t); if (gz == null) { s0 = false; continue; } if (!s0) { g.moveTo(x(t), y(gz)); s0 = true; } else g.lineTo(x(t), y(gz)); }
+      g.stroke(); g.setLineDash([]);
+    }
+    g.strokeStyle = BRASS_LIGHT; g.lineWidth = 2; g.lineJoin = 'round'; g.beginPath(); let pen = false;
+    trace.forEach((f, i) => { if (f <= 0) { pen = false; return; } const px = x((i + 0.5) * traceSec), py = y(f); if (!pen) { g.moveTo(px, py); pen = true; } else g.lineTo(px, py); });
+    g.stroke();
+  }, 'chart');
 }
 
 /** Whole-session pitch line with a playhead; tap or drag to seek. */

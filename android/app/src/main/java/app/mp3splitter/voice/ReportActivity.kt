@@ -116,15 +116,28 @@ class ReportActivity : BrassActivity() {
         }
 
         if (s.exercises.isNotEmpty()) {
-            val ep = panel(col(), 14, 8)
-            ep.add(text("Exercises", 13f, Brass.TEXT, "medium"))
+            c.add(caps("Exercises · ${s.exercises.size}"), 14)
             for (r in s.exercises) {
-                val rr = row().apply { setPadding(0, dp(6), 0, dp(6)) }
-                rr.add(text(Exercises.byId(r.id)?.name ?: r.id, 14f, 0xFFC9D2DB.toInt()), weight = 1f)
-                rr.add(text(r.detail, 13f, Brass.BRASS_TEXT), w = LinearLayout.LayoutParams.WRAP_CONTENT)
+                val ex = Exercises.byId(r.id)
+                val ep = panel(col(), 14, 10)
+                val rr = row()
+                rr.add(text(ex?.name ?: r.id, 14f, Brass.TEXT, "medium"), weight = 1f)
+                rr.add(text(r.detail, 12f, Brass.BRASS_TEXT), w = LinearLayout.LayoutParams.WRAP_CONTENT)
                 ep.add(rr)
+                val tr = r.trace
+                if (tr != null && tr.any { it > 0f }) {
+                    val guide: ((Float) -> Float?)? = if (ex != null && ex.roundSeconds > 0f) { t -> Exercises.guide(ex, t, s.target) } else null
+                    ep.addView(ExerciseChartView(this, tr, r.traceSec, s.target, s.tolerance, guide).apply { background = Brass.panel(14 * d) },
+                        LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(120)).apply { topMargin = dp(8) })
+                } else {
+                    ep.add(text(when {
+                        ex?.kind == Kind.TIMER -> "Timer · ${fmtTime(r.seconds)}"
+                        tr == null -> "${fmtTime(r.seconds)} · no graph (recorded before graphs were added)"
+                        else -> "No voice measured"
+                    }, 12f, Brass.TEXT_SOFT), 6)
+                }
+                c.add(ep, 8)
             }
-            c.add(ep, 12)
         }
 
         // feeling + notes

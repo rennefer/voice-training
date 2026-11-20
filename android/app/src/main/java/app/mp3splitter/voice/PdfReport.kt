@@ -32,8 +32,25 @@ object PdfReport {
 
     fun write(ctx: Context, s: Session): Uri {
         val doc = PdfDocument()
-        val page = doc.startPage(PdfDocument.PageInfo.Builder(W, H, 1).create())
-        draw(ctx, page.canvas, s)
+        var pageNo = 1
+        var page = doc.startPage(PdfDocument.PageInfo.Builder(W, H, pageNo).create())
+        var y = draw(ctx, page.canvas, s)
+        // one small graph per exercise, two per row, continuing on new pages
+        if (s.exercises.isNotEmpty() && s.stats != null) {
+            val x0 = 48f; val x1 = W - 48f
+            val gw = (x1 - x0 - 18f) / 2f; val gh = 92f; val rowH = gh + 40f
+            y += 22f
+            fun head(c: Canvas) { c.drawText("Exercises · ${s.exercises.size}", x0, y, paint(11f, INK, true)); y += 10f }
+            fun newPage() { doc.finishPage(page); pageNo++; page = doc.startPage(PdfDocument.PageInfo.Builder(W, H, pageNo).create()); y = 52f; footer(page.canvas); head(page.canvas) }
+            if (y + 14f + rowH > H - 60f) { doc.finishPage(page); pageNo++; page = doc.startPage(PdfDocument.PageInfo.Builder(W, H, pageNo).create()); y = 52f; footer(page.canvas) }
+            head(page.canvas)
+            s.exercises.forEachIndexed { i, r ->
+                val col = i % 2
+                if (col == 0 && i > 0) y += rowH
+                if (col == 0 && y + rowH > H - 60f) newPage()
+                exerciseGraph(page.canvas, RectF(x0 + col * (gw + 18f), y, x0 + col * (gw + 18f) + gw, y + rowH - 8f), r, s)
+            }
+        }
         doc.finishPage(page)
         val name = "voice_report_" + SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date(s.id)) + ".pdf"
         val values = ContentValues().apply {
@@ -64,7 +81,8 @@ object PdfReport {
         textSize = size; this.color = color; typeface = if (bold) Typeface.create("sans-serif-medium", Typeface.NORMAL) else Typeface.create("sans-serif", Typeface.NORMAL)
     }
 
-    private fun draw(ctx: Context, c: Canvas, s: Session) {
+    /** Draws page 1 and returns where the content ended. */
+    private fun draw(ctx: Context, c: Canvas, s: Session): Float {
         val st = s.stats
         val all = VoiceStore.all(ctx)
         val g = s.goal
@@ -85,7 +103,8 @@ object PdfReport {
 
         if (st == null) {
             c.drawText("Not enough voice was measured for a full analysis.", x0, y + 14f, paint(11f, SOFT))
-            return
+            footer(c)
+            return y + 20f
         }
         // tiles
         val tw = (x1 - x0 - 30f) / 4f
@@ -139,12 +158,6 @@ object PdfReport {
         tr("Breathiness (HNR)", "%.0f dB".format(st.hnr), prev?.let { "%.0f dB".format(it.hnr) } ?: "–", "")
         y += 22f
 
-        if (s.exercises.isNotEmpty()) {
-            c.drawText("Exercises", x0, y, paint(11f, INK, true)); y += 6f
-            val txt = s.exercises.joinToString("  ·  ") { "${Exercises.byId(it.id)?.name ?: it.id} ${it.detail}" }
-            y = block(c, txt, x0, y, x1 - x0, paint(9.5f, SOFT)) + 14f
-        }
-
         if (s.notes.isNotBlank() || s.feeling.isNotBlank() || s.notePrompt != null) {
             val title = "Notes" + if (s.feeling.isNotBlank()) " · felt ${s.feeling}" else ""
             val tp = paint(10f, INK)
@@ -160,8 +173,49 @@ object PdfReport {
             y += bh + 12f
         }
 
-        c.drawRect(x0, H - 50f, x1, H - 49.5f, Paint().apply { color = LINE })
-        c.drawText("Measured with the phone microphone. Resonance and vocal weight are estimates; compare sessions recorded the same way (same room, same distance).", x0, H - 36f, paint(7.5f, SOFT))
+        footer(c)
+        return y
+    }
+
+    private fun footer(c: Canvas) {
+        c.drawRect(48f, H - 50f, W - 48f, H - 49.5f, Paint().apply { color = LINE })
+        c.drawText("Measured with the phone microphone. Resonance and vocal weight are estimates; compare sessions recorded the same way (same room, same distance).", 48f, H - 36f, paint(7.5f, SOFT))
+    }
+
+    /** One exercise: name + result, then its pitch graph with bands, target and guide line. */
+    private fun exerciseGraph(c: Canvas, box: RectF, r: ExerciseResult, s: Session) {
+        val ex = Exercises.byId(r.id)
+        val name = (ex?.name ?: r.id).let { if (it.length > 48) it.take(47) + "…" else it }
+        c.drawText(name, box.left, box.top + 12f, paint(8.5f, INK, true))
+        val dp = paint(8f, BRASS); c.drawText(r.detail, box.right - dp.measureText(r.detail), box.top + 12f, dp)
+        val g = RectF(box.left + 22f, box.top + 18f, box.right, box.bottom - 14f)
+        val tr = r.trace ?: FloatArray(0)
+        val v = tr.filter { it > 0f }
+        if (v.isEmpty()) {
+            c.drawRoundRect(g, 4f, 4f, Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = LINE; strokeWidth = 1f })
+            val t = if (ex?.kind == Kind.TIMER) "Timer · ${fmt(r.seconds)}" else if (r.trace == null) "No graph (older session)" else "No voice measured"
+            val tp = paint(8.5f, SOFT); c.drawText(t, g.centerX() - tp.measureText(t) / 2, g.centerY() + 3f, tp)
+            return
+        }
+        val total = maxOf(r.traceSec, tr.size * r.traceSec)
+        val guide: ((Float) -> Float?)? = if (ex != null && ex.roundSeconds > 0f) { t -> Exercises.guide(ex, t, s.target) } else null
+        var lo = minOf(v.min(), s.target) - 20f; var hi = maxOf(v.max(), s.target) + 20f
+        if (guide != null) { var t = 0f; while (t <= total) { guide(t)?.let { lo = minOf(lo, it - 15f); hi = maxOf(hi, it + 15f) }; t += total / 40f } }
+        lo = lo.coerceAtLeast(60f)
+        bands(c, g, lo, hi, s.target)
+        fun px(t: Float) = g.left + t / total * g.width()
+        fun py(f: Float) = g.bottom - (f - lo) / (hi - lo) * g.height()
+        if (guide != null) {
+            val gp = Path(); var started = false; var t = 0f
+            while (t <= total) { val gz = guide(t); if (gz == null) started = false else if (!started) { gp.moveTo(px(t), py(gz)); started = true } else gp.lineTo(px(t), py(gz)); t += minOf(0.1f, total / 150f) }
+            c.drawPath(gp, Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = RULE; strokeWidth = 1.6f; pathEffect = android.graphics.DashPathEffect(floatArrayOf(1.5f, 2.5f), 0f) })
+        }
+        val path = Path(); var pen = false
+        tr.forEachIndexed { i, f -> if (f <= 0f) pen = false else { val x = px((i + 0.5f) * r.traceSec); val y = py(f); if (!pen) { path.moveTo(x, y); pen = true } else path.lineTo(x, y) } }
+        c.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = INK; strokeWidth = 1f })
+        val lp = paint(7f, SOFT)
+        c.drawText("0:00", g.left, g.bottom + 9f, lp)
+        val te = fmt(total); c.drawText(te, g.right - lp.measureText(te), g.bottom + 9f, lp)
     }
 
     private fun block(c: Canvas, s: String, x: Float, y: Float, w: Float, tp: TextPaint): Float {

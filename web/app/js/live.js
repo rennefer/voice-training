@@ -44,6 +44,19 @@ export class SessionBuilder {
     this.target = target; this.tolerance = tolerance; this.pcm = []; this.rate = 48000; this.frameSeconds = HOP / 48000;
   }
   add(f) { this.frames.push(f); }
+  /** Pitch trace of one exercise (median per ~0.25 s, max ~400 points); drops the frame range. */
+  withTrace(r) {
+    const { from, to, ...rest } = r;
+    if (from == null || to <= from) return rest;
+    const fs = this.frameSeconds, frames = this.frames.slice(from, to);
+    const step = Math.max(Math.max(1, Math.floor(0.25 / fs)), Math.floor(frames.length / 400) + 1);
+    const trace = [];
+    for (let i = 0; i < frames.length; i += step) {
+      const v = frames.slice(i, i + step).filter(f => f.f0 > 0).map(f => f.f0).sort((a, b) => a - b);
+      trace.push(v.length * 2 < Math.min(step, frames.length - i) ? 0 : Math.round(v[v.length >> 1] * 10) / 10);
+    }
+    return { ...rest, trace, traceSec: step * fs };
+  }
   build(routineSize = 0, plan = null) {
     const fs = this.frameSeconds;
     const stats = computeStats(this.frames, fs, this.target, this.tolerance);
@@ -57,7 +70,7 @@ export class SessionBuilder {
     }
     const seconds = this.activeSeconds > 0 ? this.activeSeconds : this.frames.length * fs;
     return {
-      id: this.start, seconds, stats, exercises: [...this.results], notes: '', feeling: '',
+      id: this.start, seconds, stats, exercises: this.results.map(r => this.withTrace(r)), notes: '', feeling: '',
       trace, dir: this.dir, plan, target: this.target, tolerance: this.tolerance, routineSize, traceSec: step * fs,
       pcm: this.pcm.length ? this.pcm : null, rate: this.rate,
     };

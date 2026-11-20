@@ -62,6 +62,7 @@ class ExerciseActivity : BrassActivity() {
     private var t = 0f
     private var lastRound = -1
     private var timerStart = 0L
+    private var exFrom = 0
     private val handler = Handler(Looper.getMainLooper())
     private var clip: Uri? = null
     private var player: MediaPlayer? = null
@@ -213,7 +214,7 @@ class ExerciseActivity : BrassActivity() {
     private fun start() {
         phase = Phase.RUNNING
         mainBtn.text = "Stop"
-        timerStart = System.currentTimeMillis()
+        timerStart = System.currentTimeMillis(); exFrom = session.frames.size
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (ex.kind == Kind.TIMER) { tickTimer(); return }
         if (ex.kind == Kind.MIMIC) clip?.let { u ->
@@ -302,7 +303,7 @@ class ExerciseActivity : BrassActivity() {
         }
         if (ex.cat == Category.PLAN) tileScore.second.text = med?.let { "$it Hz" } ?: "✓"
         val saved = if (ex.kind == Kind.BASELINE || ex.cat == Category.PLAN) 100 else s
-        if (ex.kind == Kind.TIMER || exFrames.any { it.voiced }) session.results += ExerciseResult(ex.id, saved, secs, detail)
+        if (ex.kind == Kind.TIMER || exFrames.any { it.voiced }) session.results += ExerciseResult(ex.id, saved, secs, detail, exFrom, session.frames.size)
         howText.text = when (ex.kind) {
             Kind.BASELINE -> "Your comfortable pitch right now is about $s Hz. Your target is ${settings.target.toInt()} Hz — move toward it in small steps."
             Kind.TIMER -> "Done. Nice and calm."

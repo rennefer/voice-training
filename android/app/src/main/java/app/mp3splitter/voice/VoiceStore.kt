@@ -55,10 +55,18 @@ class VoiceSettings(private val ctx: Context) {
     fun unlock(id: String, at: Long) { if (unlockedAt(id) == 0L) p.edit().putLong("ach_$id", at).apply() }
 }
 
-data class ExerciseResult(val id: String, val score: Int, val seconds: Float, val detail: String) {
-    fun toJson() = JSONObject().put("id", id).put("score", score).put("seconds", seconds.toDouble()).put("detail", detail)
+data class ExerciseResult(
+    val id: String, val score: Int, val seconds: Float, val detail: String,
+    val from: Int = -1, val to: Int = -1,               // frame range in the session (only while building)
+    val trace: FloatArray? = null, val traceSec: Float = 0.25f,   // pitch graph of this exercise
+) {
+    fun toJson() = JSONObject().put("id", id).put("score", score).put("seconds", seconds.toDouble()).put("detail", detail).also { o ->
+        trace?.let { t -> o.put("trace", JSONArray().apply { t.forEach { put(it.toDouble()) } }).put("traceSec", traceSec.toDouble()) }
+    }
     companion object {
-        fun from(o: JSONObject) = ExerciseResult(o.getString("id"), o.getInt("score"), o.getDouble("seconds").toFloat(), o.optString("detail"))
+        fun from(o: JSONObject) = ExerciseResult(o.getString("id"), o.getInt("score"), o.getDouble("seconds").toFloat(), o.optString("detail"),
+            trace = o.optJSONArray("trace")?.let { a -> FloatArray(a.length()) { a.getDouble(it).toFloat() } },
+            traceSec = o.optDouble("traceSec", 0.25).toFloat())
     }
 }
 

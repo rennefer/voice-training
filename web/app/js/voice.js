@@ -234,7 +234,7 @@ export function exerciseScreen(root, mode, idList) {
   const isRoutine = mode === 'routine';
   const dir = dirOf(set);
   const session = new SessionBuilder(set.target, set.tolerance, dir);
-  let index = 0, phase = 'READY', analyzer = null, exFrames = [], exTimes = [], t = 0, lastRound = -1, timerStart = 0, timer = 0, clip = null, clipPlayer = null;
+  let exFrom = 0, index = 0, phase = 'READY', analyzer = null, exFrames = [], exTimes = [], t = 0, lastRound = -1, timerStart = 0, timer = 0, clip = null, clipPlayer = null;
   const smooth = new LiveSmoother();
   const ex = () => exercises[index];
 
@@ -293,7 +293,7 @@ export function exerciseScreen(root, mode, idList) {
   function onMain() { if (phase === 'READY') start(); else if (phase === 'RUNNING') stop(); else next(); }
 
   async function start() {
-    phase = 'RUNNING'; mainBtn.textContent = 'Stop'; timerStart = Date.now();
+    phase = 'RUNNING'; mainBtn.textContent = 'Stop'; timerStart = Date.now(); exFrom = session.frames.length;
     const e = ex();
     if (e.kind === 'TIMER') { tick(); return; }
     analyzer = new LiveAnalyzer(onFrame, (m) => { how.textContent = m; stop(); }, session.pcm);
@@ -369,7 +369,7 @@ export function exerciseScreen(root, mode, idList) {
       tScore.v.textContent = v.length ? `${Math.round(median(v))} Hz` : '✓';
     }
     if (e.kind === 'BASELINE') { if (s > 0) saveSettings({ baseline: s }); detail = `comfortable pitch ${s} Hz`; }
-    if (e.kind === 'TIMER' || exFrames.some(f => f.f0 > 0)) session.results.push({ id: e.id, score: e.kind === 'BASELINE' ? 100 : saveScore, seconds: secs, detail });
+    if (e.kind === 'TIMER' || exFrames.some(f => f.f0 > 0)) session.results.push({ id: e.id, score: e.kind === 'BASELINE' ? 100 : saveScore, seconds: secs, detail, from: exFrom, to: session.frames.length });
     how.textContent = e.kind === 'BASELINE' ? `Your comfortable pitch right now is about ${s} Hz. Your target is ${Math.round(set.target)} Hz — move toward it in small steps.`
       : e.kind === 'TIMER' ? 'Done. Nice and calm.' : `Done — ${tScore.l.textContent.toLowerCase()} ${scoreText(s)}.`;
     mainBtn.textContent = index < exercises.length - 1 ? 'Next exercise' : 'Finish';

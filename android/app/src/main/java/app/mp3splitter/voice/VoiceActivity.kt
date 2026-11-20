@@ -25,6 +25,19 @@ class SessionBuilder(val target: Float, val tolerance: Float, val pcm: java.io.F
 
     fun add(f: VoiceFrame) { frames += f }
 
+    /** Pitch trace of one exercise (median per ~0.25 s, max ~400 points). */
+    private fun withTrace(r: ExerciseResult): ExerciseResult {
+        if (r.from < 0 || r.to <= r.from || r.to > frames.size) return r.copy(from = -1, to = -1)
+        val part = frames.subList(r.from, r.to)
+        val per = (0.25f / LiveAnalyzer.FRAME_SECONDS).toInt().coerceAtLeast(1)
+        val step = maxOf(per, part.size / 400 + 1)
+        val tr = part.chunked(step).map { ch ->
+            val v = ch.filter { it.voiced }.map { it.f0 }.sorted()
+            if (v.size * 2 < ch.size) 0f else v[v.size / 2]
+        }.toFloatArray()
+        return r.copy(from = -1, to = -1, trace = tr, traceSec = step * LiveAnalyzer.FRAME_SECONDS)
+    }
+
     fun build(routineSize: Int = 0): Session {
         val st = SessionStats.compute(frames, LiveAnalyzer.FRAME_SECONDS, target, tolerance)
         // trace: one value per 0.25 s (median of voiced frames, 0 = silence), capped to ~1200 points
@@ -35,7 +48,7 @@ class SessionBuilder(val target: Float, val tolerance: Float, val pcm: java.io.F
             if (v.size * 2 < ch.size) 0f else v[v.size / 2]
         }.toFloatArray()
         val secs = if (activeSeconds > 0f) activeSeconds else frames.size * LiveAnalyzer.FRAME_SECONDS
-        return Session(start, secs, st, results.toMutableList(), trace = trace, target = target, tolerance = tolerance,
+        return Session(start, secs, st, results.map { withTrace(it) }.toMutableList(), trace = trace, target = target, tolerance = tolerance,
             routineSize = routineSize, traceSec = step * LiveAnalyzer.FRAME_SECONDS, dir = if (goal == Goal.FTM) "ftm" else "mtf").also { s ->
             s.pcmPath = pcm?.takeIf { it.exists() && it.length() > 0 }?.absolutePath
         }

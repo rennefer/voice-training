@@ -11,6 +11,8 @@ import android.graphics.Shader
 import android.graphics.Typeface
 import android.view.View
 import app.mp3splitter.Brass
+import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
@@ -38,8 +40,13 @@ class PitchChartView(ctx: Context) : View(ctx) {
     var guide: ((Float) -> Float?)? = null     // t within round -> Hz
     var idleText: String? = null
 
+    // Whole history in live mode (drag to scroll back, tap to read a point, "Live" to follow again)
     private val ts = ArrayList<Float>(); private val fs = ArrayList<Float>()
     private var now = 0f
+    private var follow = true
+    private var viewEnd = 0f
+    private var cursor = -1f
+    private val windows = floatArrayOf(6f, 20f, 60f)
 
     private val fill = Paint()
     private val grid = Paint().apply { strokeWidth = 1f }
@@ -50,30 +57,95 @@ class PitchChartView(ctx: Context) : View(ctx) {
     private val targetLine = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(2f); color = BRASS_LIGHT; pathEffect = DashPathEffect(floatArrayOf(dp(6f), dp(5f)), 0f) }
     private val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt() }
     private val idle = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Brass.TEXT_SOFT; textSize = dp(15f); textAlign = Paint.Align.CENTER }
+    private val pillText = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = dp(12.5f); typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL) }
+    private val pillFill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val gutter get() = dp(36f)
+    private val liveRect = android.graphics.RectF()
+    private val zoomRect = android.graphics.RectF()
 
-    fun clear() { ts.clear(); fs.clear(); now = 0f; invalidate() }
+    private val scrollable get() = roundSeconds <= 0f && ts.isNotEmpty()
+
+    fun clear() { ts.clear(); fs.clear(); now = 0f; follow = true; cursor = -1f; invalidate() }
 
     /** Add a frame at time t (s since start, or since round start in round mode). */
     fun add(t: Float, f0: Float) {
         ts += t; fs += f0; now = t
-        if (roundSeconds <= 0f) while (ts.isNotEmpty() && ts[0] < t - window - 0.5f) { ts.removeAt(0); fs.removeAt(0) }
-        invalidate()
+        if (roundSeconds <= 0f && ts.size > 200_000) { ts.subList(0, 20_000).clear(); fs.subList(0, 20_000).clear() }   // ~2.5 h cap
+        if (follow || ts.size == 1) invalidate()
     }
 
     fun centerOn(t: Float, span: Float = 160f) {
         lo = (t - span / 2).coerceAtLeast(60f); hi = lo + span; invalidate()
     }
 
+    fun goLive() { follow = true; cursor = -1f; invalidate() }
+
+    private fun end() = if (follow) max(now, window) else viewEnd
     private fun y(hz: Float) = height - (hz - lo) / (hi - lo) * height
     private fun x(t: Float): Float {
         val w = width - gutter
         return if (roundSeconds > 0f) gutter + t / roundSeconds * w
-        else gutter + (t - (max(now, window) - window)) / window * w
+        else gutter + (t - (end() - window)) / window * w
     }
+    private fun firstIndexAtOrAfter(t: Float): Int {
+        var a = 0; var b = ts.size
+        while (a < b) { val m = (a + b) ushr 1; if (ts[m] < t) a = m + 1 else b = m }
+        return a
+    }
+    private fun clock(t: Float): String { val s = max(0f, t).toInt(); return "%d:%02d".format(s / 60, s % 60) }
+
+    // ---- touch: drag to scroll, tap to read, pills for Live and zoom
+    private var downX = 0f; private var downEnd = 0f; private var moved = false
+    override fun onTouchEvent(e: android.view.MotionEvent): Boolean {
+        if (!scrollable) return false
+        when (e.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                downX = e.x; downEnd = end(); moved = false
+                parent?.requestDisallowInterceptTouchEvent(true)
+                return true
+            }
+            android.view.MotionEvent.ACTION_MOVE -> {
+                val dx = e.x - downX
+                if (abs(dx) > dp(6f)) moved = true
+                if (moved) {
+                    viewEnd = (downEnd - dx / (width - gutter) * window).coerceIn(window, max(window, now))
+                    follow = dx < 0 && viewEnd >= now - 0.05f
+                    cursor = -1f
+                    invalidate()
+                }
+                return true
+            }
+            android.view.MotionEvent.ACTION_UP -> {
+                parent?.requestDisallowInterceptTouchEvent(false)
+                if (!moved) {
+                    when {
+                        !follow && liveRect.contains(e.x, e.y) -> goLive()
+                        zoomRect.contains(e.x, e.y) -> {
+                            val keep = end()
+                            val i = (windows.indexOfFirst { it == window } + 1) % windows.size
+                            window = windows[i]
+                            if (!follow) viewEnd = keep.coerceIn(window, max(window, now))
+                            invalidate()
+                        }
+                        e.x > gutter -> {
+                            if (follow) { viewEnd = end(); follow = false }
+                            cursor = end() - window + (e.x - gutter) / (width - gutter) * window
+                            invalidate()
+                        }
+                    }
+                    performClick()
+                }
+                return true
+            }
+            android.view.MotionEvent.ACTION_CANCEL -> { parent?.requestDisallowInterceptTouchEvent(false); return true }
+        }
+        return super.onTouchEvent(e)
+    }
+    override fun performClick(): Boolean = super.performClick()
 
     override fun onDraw(c: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
+        val t1 = end(); val t0 = t1 - window
         // bands
         fill.color = FEMALE_FILL
         c.drawRect(0f, y(Ranges.FEMALE_HI).coerceIn(0f, h), w, y(Ranges.FEMALE_LO).coerceIn(0f, h), fill)
@@ -96,9 +168,25 @@ class PitchChartView(ctx: Context) : View(ctx) {
             c.drawLine(if (major) gutter - dp(4f) else gutter, y(v), w, y(v), grid)
             if (major) {
                 label.color = if (hundred) 0xFFC9D2DB.toInt() else Brass.TEXT_SOFT
+                label.textAlign = Paint.Align.LEFT
                 c.drawText(v.toInt().toString(), dp(4f), y(v) + dp(3.5f), label)
             }
             v += 10f
+        }
+        // time ticks when looking back or zoomed out
+        if (scrollable && (!follow || window > 6f)) {
+            val step = if (window <= 6f) 1 else if (window <= 20f) 5 else 10
+            var t = (ceil(max(0f, t0) / step) * step)
+            label.textAlign = Paint.Align.CENTER; label.color = Brass.TEXT_SOFT
+            while (t <= t1) {
+                val px = x(t)
+                if (px > gutter + dp(12f) && px < w - dp(12f)) {
+                    grid.color = 0x0FFFFFFF; c.drawLine(px, 0f, px, h - dp(14f), grid)
+                    c.drawText(clock(t), px, h - dp(3f), label)
+                }
+                t += step
+            }
+            label.textAlign = Paint.Align.LEFT
         }
         // guide
         guide?.let { g ->
@@ -111,22 +199,53 @@ class PitchChartView(ctx: Context) : View(ctx) {
                 c.drawPath(p, guidePaint)
             }
         }
-        // trace
+        // trace (visible part only)
+        trace.strokeWidth = dp(if (window > 20f) 1.6f else 2.5f)
         val p = Path(); var pen = false; var lastT = -1f
-        for (i in ts.indices) {
+        val i0 = if (roundSeconds > 0f) 0 else firstIndexAtOrAfter(t0 - 0.5f)
+        for (i in i0 until ts.size) {
             val f = fs[i]; val t = ts[i]
+            if (roundSeconds <= 0f && t > t1 + 0.5f) break
             if (f <= 0f || (lastT >= 0 && t - lastT > 0.12f)) { pen = false }
             if (f > 0f) {
                 val px = x(t); val py = y(f.coerceIn(lo - 20, hi + 20))
-                if (px < gutter) { lastT = t; continue }
                 if (!pen) { p.moveTo(px, py); pen = true } else p.lineTo(px, py)
             }
             lastT = t
         }
         c.save(); c.clipRect(gutter, 0f, w, h)
         c.drawPath(p, trace)
-        if (fs.isNotEmpty() && fs.last() > 0f) c.drawCircle(x(ts.last()), y(fs.last().coerceIn(lo, hi)), dp(6f), dot)
+        if (follow && fs.isNotEmpty() && fs.last() > 0f) c.drawCircle(x(ts.last()), y(fs.last().coerceIn(lo, hi)), dp(6f), dot)
+        // cursor read-out
+        if (!follow && cursor >= 0f && ts.isNotEmpty()) {
+            val px = x(cursor)
+            fill.color = 0xCCFFFFFF.toInt(); c.drawRect(px - dp(0.75f), 0f, px + dp(0.75f), h, fill)
+            val k = firstIndexAtOrAfter(cursor).coerceAtMost(ts.size - 1)
+            val f = if (abs(ts[k] - cursor) < 0.2f) fs[k] else 0f
+            if (f > 0f) c.drawCircle(px, y(f.coerceIn(lo, hi)), dp(5f), dot)
+            val text = "${clock(cursor)} · " + if (f > 0f) "${f.toInt()} Hz" else "silence"
+            val tw = pillText.measureText(text) + dp(16f)
+            val bx = (px - tw / 2).coerceIn(gutter + dp(2f), w - tw - dp(2f))
+            pillFill.color = 0xE60D141C.toInt(); c.drawRoundRect(bx, dp(6f), bx + tw, dp(28f), dp(11f), dp(11f), pillFill)
+            pillText.color = 0xFFEFE1BB.toInt(); c.drawText(text, bx + dp(8f), dp(21.5f), pillText)
+        }
         c.restore()
+        // pills: zoom (bottom left) and Live (bottom right)
+        if (scrollable) {
+            val zt = "↔ ${window.toInt()} s"
+            val zw = pillText.measureText(zt) + dp(20f)
+            zoomRect.set(gutter + dp(6f), h - dp(38f), gutter + dp(6f) + zw, h - dp(8f))
+            pillFill.color = 0xBF0D141C.toInt(); c.drawRoundRect(zoomRect, dp(15f), dp(15f), pillFill)
+            pillText.color = 0xFFD6BB85.toInt(); c.drawText(zt, zoomRect.left + dp(10f), zoomRect.bottom - dp(10f), pillText)
+            if (!follow) {
+                val lt = "Live ▸"; val lw = pillText.measureText(lt) + dp(24f)
+                liveRect.set(w - dp(8f) - lw, h - dp(40f), w - dp(8f), h - dp(8f))
+                pillFill.shader = android.graphics.LinearGradient(liveRect.left, liveRect.top, liveRect.right, liveRect.bottom,
+                    intArrayOf(0xFFEFE1BB.toInt(), 0xFFC8A96C.toInt(), 0xFF9C7B43.toInt()), null, android.graphics.Shader.TileMode.CLAMP)
+                c.drawRoundRect(liveRect, dp(16f), dp(16f), pillFill); pillFill.shader = null
+                pillText.color = Brass.ON_BRASS; c.drawText(lt, liveRect.left + dp(12f), liveRect.bottom - dp(11f), pillText)
+            } else liveRect.setEmpty()
+        } else { zoomRect.setEmpty(); liveRect.setEmpty() }
         if (ts.isEmpty()) idleText?.let { c.drawText(it, (gutter + w) / 2, h / 2, idle) }
     }
 }
@@ -327,6 +446,50 @@ class ScoreDialView(ctx: Context) : View(ctx) {
         }
     }
 }
+
+/** Small pitch graph for one exercise: bands, target zone, the exercise's guide line (if any) and your pitch. */
+class ExerciseChartView(ctx: Context, private val trace: FloatArray, private val traceSec: Float,
+                        private val target: Float, private val tolerance: Float, private val guide: ((Float) -> Float?)?) : View(ctx) {
+    private val total = maxOf(traceSec, trace.size * traceSec)
+    private var lo: Float; private var hi: Float
+    init {
+        val v = trace.filter { it > 0f }
+        var l = minOf(v.minOrNull() ?: target, target) - 20f; var h = maxOf(v.maxOrNull() ?: target, target) + 20f
+        if (guide != null) { var t = 0f; while (t <= total) { guide.invoke(t)?.let { l = minOf(l, it - 15f); h = maxOf(h, it + 15f) }; t += total / 60f } }
+        lo = maxOf(60f, (l / 10f).toInt() * 10f); hi = kotlin.math.ceil(h / 10f) * 10f
+        if (hi - lo < 60f) hi = lo + 60f
+    }
+    private val fill = Paint()
+    private val grid = Paint().apply { color = 0x12FFFFFF }
+    private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.MONOSPACE; textSize = dp(9.5f); color = Brass.TEXT_SOFT }
+    private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(2f); color = BRASS_LIGHT; strokeJoin = Paint.Join.ROUND }
+    private val guidePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(5f); color = 0xB3D6BB85.toInt(); strokeCap = Paint.Cap.ROUND; pathEffect = DashPathEffect(floatArrayOf(dp(1.5f), dp(6f)), 0f) }
+
+    override fun onDraw(c: Canvas) {
+        val w = width.toFloat(); val h = height.toFloat(); val gx = dp(30f); val bottom = h - dp(14f)
+        fun y(f: Float) = dp(4f) + (1 - (f - lo) / (hi - lo)) * (bottom - dp(4f))
+        fun x(t: Float) = gx + t / total * (w - gx - dp(4f))
+        fill.color = FEMALE_FILL; c.drawRect(gx, y(Ranges.FEMALE_HI).coerceIn(0f, bottom), w, y(Ranges.FEMALE_LO).coerceIn(0f, bottom), fill)
+        fill.color = MALE_FILL; c.drawRect(gx, y(Ranges.MALE_HI).coerceIn(0f, bottom), w, y(Ranges.MALE_LO).coerceIn(0f, bottom), fill)
+        fill.color = 0x24EFE1BB; c.drawRect(gx, y(target + tolerance), w, y(target - tolerance), fill)
+        val step = if (hi - lo > 120f) 40 else 20
+        var f = kotlin.math.ceil(lo / step) * step
+        label.textAlign = Paint.Align.LEFT
+        while (f <= hi) { c.drawRect(gx, y(f), w, y(f) + 1f, grid); c.drawText(f.toInt().toString(), 0f, y(f) + dp(3.5f), label); f += step }
+        c.drawText("0:00", gx + dp(4f), h - dp(3f), label)
+        val te = "%d:%02d".format(total.toInt() / 60, total.toInt() % 60)
+        label.textAlign = Paint.Align.RIGHT; c.drawText(te, w - dp(12f), h - dp(3f), label)
+        guide?.let { g ->
+            val p = Path(); var started = false; var t = 0f
+            while (t <= total) { val gz = g(t); if (gz == null) started = false else if (!started) { p.moveTo(x(t), y(gz)); started = true } else p.lineTo(x(t), y(gz)); t += minOf(0.1f, total / 200f) }
+            c.drawPath(p, guidePaint)
+        }
+        val p = Path(); var pen = false
+        trace.forEachIndexed { i, v -> if (v <= 0f) pen = false else { val px = x((i + 0.5f) * traceSec); val py = y(v); if (!pen) { p.moveTo(px, py); pen = true } else p.lineTo(px, py) } }
+        c.drawPath(p, line)
+    }
+}
+
 
 /** Whole-session pitch line with a playhead; tap or drag to jump. */
 class TraceView(ctx: Context, private val trace: FloatArray, private val traceSec: Float, private val target: Float) : View(ctx) {

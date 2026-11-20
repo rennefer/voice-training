@@ -2,8 +2,8 @@
 import { el, header, fmtTime, icons, modal, toast, confirmBox, share } from './ui.js';
 import { sessions, saveSession, deleteSession, getSession, saveAudio, getAudio, pending, setPending, S } from './store.js';
 import { Scores } from './engine.js';
-import { histogram, traceView } from './views.js';
-import { byId, sessionLabel, goalPct, DIRS } from './exercises.js';
+import { histogram, traceView, exerciseChart } from './views.js';
+import { byId, sessionLabel, goalPct, DIRS, guide } from './exercises.js';
 import { Scoring } from './scoring.js';
 import { join, encodeMp3, playSamples, audioContext, pling } from './audio.js';
 import { go, onLeave } from './main.js';
@@ -50,8 +50,18 @@ export async function reportScreen(root, idStr) {
       line('Breathiness (HNR)', `${st.hnr.toFixed(0)} dB`, st.breathiness < 35 ? 'clear' : st.breathiness < 65 ? 'some air' : 'breathy'),
       line('Voice time', fmtTime(st.voicedSeconds), '')));
   }
-  if (s.exercises.length) root.append(el('div.panel', { style: { padding: '10px 14px' } }, el('div', { style: { fontWeight: 500, fontSize: '13px', marginBottom: '4px' } }, 'Exercises'),
-    ...s.exercises.map(r => el('div.kv', el('div.k', byId(r.id)?.name || r.id), el('div.n', { style: { fontSize: '13px' } }, r.detail)))));
+  if (s.exercises.length) {
+    root.append(el('div.caps', { style: { marginTop: '6px' } }, `Exercises · ${s.exercises.length}`));
+    for (const r of s.exercises) {
+      const ex = byId(r.id), voiced = (r.trace || []).some(f => f > 0);
+      const guideAt = ex && ex.roundSeconds > 0 ? (t) => guide(ex, t, s.target) : null;
+      root.append(el('div.panel.col', { style: { gap: '8px' } },
+        el('div.row', { style: { alignItems: 'baseline' } }, el('div.grow', { style: { fontWeight: 500, fontSize: '14px' } }, ex?.name || r.id),
+          el('div.small.brass-text', r.detail)),
+        voiced ? exerciseChart(r.trace, r.traceSec, s.target, s.tolerance, guideAt)
+          : el('div.small.soft', ex?.kind === 'TIMER' ? `Timer · ${fmtTime(r.seconds)}` : r.trace ? 'No voice measured' : `${fmtTime(r.seconds)} · no graph (recorded before graphs were added)`)));
+    }
+  }
 
   const feelRow = el('div.row', { style: { gap: '4px' } });
   const renderFeel = () => feelRow.replaceChildren(...['Easy', 'OK', 'Strained'].map(f => el('button.chip' + (s.feeling === f ? '.on' : ''), { onclick: () => { s.feeling = s.feeling === f ? '' : f; renderFeel(); } }, f)));
