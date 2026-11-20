@@ -215,6 +215,7 @@ class ExerciseActivity : BrassActivity() {
         phase = Phase.RUNNING
         mainBtn.text = "Stop"
         timerStart = System.currentTimeMillis(); exFrom = session.frames.size
+        HzService.stop(this)   // the exercise needs the microphone
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (ex.kind == Kind.TIMER) { tickTimer(); return }
         if (ex.kind == Kind.MIMIC) clip?.let { u ->

@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -78,9 +79,14 @@ class VoiceActivity : BrassActivity() {
     private var onTargetFrames = 0; private var voicedFrames = 0
     private var shownHz = 0f
 
+    private var forBubble = false
+    private var waitingForOverlay = false
+    private lateinit var hzButton: android.widget.TextView
     private val askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
-        if (ok) startLive() else statusText.text = "Microphone permission is needed."
+        if (!ok) statusText.text = "Microphone permission is needed."
+        else if (forBubble) startHzFlow() else startLive()
     }
+    private val askNotify = registerForActivityResult(ActivityResultContracts.RequestPermission()) { startHzFlow(askedNotify = true) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -125,6 +131,10 @@ class VoiceActivity : BrassActivity() {
         meters.add(goalText, 6)
         c.add(meters, 12)
 
+        // Live Hz: floating bubble + lock-screen notification while talking in other apps
+        hzButton = ghostButton("Live Hz over other apps") { if (HzService.running) { HzService.stop(this); updateHzButton(false) } else startHzFlow() }
+        c.add(hzButton, 10)
+
         val bottom = row()
         bottom.add(ghostButton("Exercises") { startActivity(Intent(this, ExercisesActivity::class.java)) }, weight = 1f)
         val (rb, glyph) = recordButton(68) { if (analyzer?.isRunning == true) stopLive() else requestStart() }
@@ -162,7 +172,40 @@ class VoiceActivity : BrassActivity() {
         if (hasMic()) startLive() else askMic.launch(Manifest.permission.RECORD_AUDIO)
     }
 
+    /** Permissions for Live Hz: microphone, notifications (Android 13+), then "display over other apps" for the bubble. */
+    private fun startHzFlow(askedNotify: Boolean = false) {
+        if (!hasMic()) { forBubble = true; askMic.launch(Manifest.permission.RECORD_AUDIO); return }
+        forBubble = false
+        if (android.os.Build.VERSION.SDK_INT >= 33 && !askedNotify &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            askNotify.launch(Manifest.permission.POST_NOTIFICATIONS); return
+        }
+        if (!HzService.canOverlay(this)) {
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Show the Hz bubble over other apps?")
+                .setMessage("The floating bubble needs the \"Display over other apps\" permission. On the next screen, find Recorder and turn it on, then come back.\n\nWithout it you still get live Hz in the notification and on the lock screen.")
+                .setPositiveButton("Allow bubble") { _, _ ->
+                    waitingForOverlay = true
+                    startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
+                }
+                .setNegativeButton("Notification only") { _, _ -> launchHz() }
+                .show()
+            return
+        }
+        launchHz()
+    }
+
+    private fun launchHz() {
+        if (analyzer?.isRunning == true) stopLive()
+        HzService.start(this)
+        updateHzButton(true)
+        Toast.makeText(this, if (HzService.canOverlay(this)) "Live Hz is on — long-press the bubble to stop" else "Live Hz is on — see the notification", Toast.LENGTH_LONG).show()
+    }
+
+    private fun updateHzButton(on: Boolean) { hzButton.text = if (on) "Stop live Hz" else "Live Hz over other apps" }
+
     private fun startLive() {
+        HzService.stop(this)   // only one thing can use the microphone for pitch at a time
         val pcm = VoiceStore.pendingPcm(this).apply { delete() }
         builder = SessionBuilder(settings.target, settings.tolerance, pcm, settings.goal)
         smooth.clear(); chart.clear(); t = 0f; onTargetFrames = 0; voicedFrames = 0
@@ -253,6 +296,8 @@ class VoiceActivity : BrassActivity() {
     private var shownGoal: Goal? = null
     override fun onResume() {
         super.onResume()
+        if (::hzButton.isInitialized) updateHzButton(HzService.running)
+        if (waitingForOverlay) { waitingForOverlay = false; if (HzService.canOverlay(this)) launchHz() else startHzFlow() }
         // the direction may have been switched on the Exercises screen
         if (shownGoal != null && shownGoal != settings.goal) recreate()
         shownGoal = settings.goal

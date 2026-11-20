@@ -50,6 +50,15 @@ class VoiceAnalyzer(private val rate: Int = 44100) {
     private val re = DoubleArray(FRAME)
     private val im = DoubleArray(FRAME)
 
+    /** Pitch only (Hz, 0 = silence/unvoiced) — cheap version for the Live Hz bubble. */
+    fun pitch(x: FloatArray, off: Int = 0): Float {
+        var sum = 0.0
+        for (i in 0 until FRAME) { val v = x[off + i]; sum += v * v }
+        if (20 * log10(sqrt(sum / FRAME) + 1e-9) < SILENCE_DB) return 0f
+        decimate(x, off)
+        return yin().first.coerceAtLeast(0f)
+    }
+
     fun analyze(x: FloatArray, off: Int = 0): VoiceFrame {
         // level
         var sum = 0.0
